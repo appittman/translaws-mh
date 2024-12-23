@@ -55,3 +55,51 @@ laws_data <- left_join(laws_data, complete)
 write_csv(laws_data, file = here("data_raw", "partial_laws_data.csv"))
 
 #################################### need to do the rest
+
+
+
+data <- read_csv(here("data_raw", "partial_laws_data.csv"))
+
+
+passed_laws_data <- data |> 
+  mutate(last_action_date = mdy(last_action_date)) |> 
+  filter(last_action == "passed") |> 
+  arrange(last_action_date)
+
+save(passed_laws_data, file = here("data", "passed_laws_data.Rdata"))
+
+######### creating a panel setup
+
+load(here("data", "pulsetimeline.Rdata"))
+
+
+firstlaws <- passed_laws_data |> 
+  group_by(state) |> 
+  slice_min(last_action_date, with_ties = FALSE) |> 
+  arrange(last_action_date) |> 
+  select(state, bill, last_action_date)
+
+panelsetup <- tibble(state = rep(state.abb, each = 30)) |> 
+  mutate(week = rep(34:63, length.out = 1500)) |> 
+  left_join(pulsetimeline) |> 
+  left_join(firstlaws) |> 
+  mutate(treated = case_when(is.na(last_action_date) ~ 0,
+                                        last_action_date < enddate ~ 1,
+                                        last_action_date >= enddate ~ 0)) |> 
+  group_by(state) |> 
+  mutate(number_treated = sum(treated))
+  
+ggplot(data = panelsetup) +
+  geom_tile(aes(x = week, y = reorder(state, number_treated), 
+                fill = as.factor(treated)), color = "black") +
+  scale_fill_manual(values = c("skyblue", "tomato"), labels = c("none", "at least 1")) +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  labs(x = "Wave",
+       y = "State",
+       fill = "Anti-Trans State Laws Passed Since 2018:")
+
+save(panelsetup, file = here("data", "panelsetup.Rdata"))
+
+
+
