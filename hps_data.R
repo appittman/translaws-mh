@@ -158,6 +158,8 @@ save(data_raw, file = here("data_raw", "data_raw_bin.Rdata"), compress = "bzip2"
 # variables that start in "a" are imputation flags
 # all missing codes in these variables are -99
 
+load(here("data_raw", "data_raw_bin.Rdata"))
+
 data_raw <- data_raw |> 
   clean_names()
 
@@ -197,6 +199,8 @@ data_rc <- data_raw |>
                                .default = 0),
          cis_lgbq = case_when(trans_gnc == 0 & 
                                 sexual_orientation %in% c(1,3,4,5) ~ 1,
+                              is.na(trans_gnc) ~ NA_integer_,
+                              is.na(sexual_orientation) ~ NA_integer_,
                               .default = 0),
          queer = case_when(trans_gnc == 1 ~ 1,
                            cis_lgbq == 1 ~ 1,
@@ -210,7 +214,7 @@ data_rc <- data_raw |>
 
 ### doing some checking of recodes, think i have it
 data_rc |> 
-  group_by(sexual_orientation, genid_birth, genid_describe, trans_gnc, cis_lgbq, queer) |> 
+  group_by(sexual_orientation, genid_birth, genid_describe, trans_gnc, cis_lgbq) |> 
   summarize(n = n()) |> 
   print(n = Inf)
 

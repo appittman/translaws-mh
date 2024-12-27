@@ -25,17 +25,16 @@ save(full_dataset, file = here("data", "full_dataset.Rdata"),
 
 ## In addition, I'll want to run some models with just trans/gnc folks, and some with all queer folks
 
+## full_dataset
 
-## control group 1: LGBTQ vs. straight people, same state
-# always-treated and never-treated are excluded here
-df_treated_states <- full_dataset |> 
-  filter(number_treated > 0 & number_treated < 30)
+d <- full_dataset |> 
+ drop_na(anxious, worry, interest, down)
 
-## control group 2: LGBTQ vs. LGBTQ people, different states
-# always-treated states are still excluded
+(1953207-1706298)/1953207
 
-df_only_queer <- full_dataset |> 
-  filter(number_treated < 30 & queer == 1)
+#12.6% of the sample is missing on one of the PHQ questionnaires
+#1706288 people answered all four of the PHQ questions
 
+#1688285 people are identifiably queer or non-queer
 
-save(df_treated_states, df_only_queer, file = here("data", "smaller_datasets.Rdata"))
+(1706288 - 1688285)/1706288
