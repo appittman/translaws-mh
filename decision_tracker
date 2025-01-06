@@ -21,6 +21,9 @@ DATA DECISIONS TRACKER
       2. cis_lgbq is 1 OR
       3. trans_gnc is missing, AND sexual_orientation is anything but "straight" (NOT missing)
         - queer is missing if sexual_orientation is missing and trans_gnc is not 1
+  C. Coding of PHQ-4 Questions
+    - recoded each so that the lowest frequency was 0 and the highest was 3
+    - added them together to get a total PHQ-4 score
         
 2. Anti-Trans Laws Data
   A. ACLU Data
@@ -41,6 +44,9 @@ DATA DECISIONS TRACKER
       1. Googled the bill, attempted to find a bill of the same or close number that was anti-trans, went back to LegiScan with new bill
       2. If 1 was unsuccessful and bill did not pass, marked "dead" and moved on
         - No bills that passed were unsuccessful on 1
+  C. Narrowing Down to Healthcare Bills
+    - after initial analysis, results weren't making sense - showing that anti-trans laws *improved* mental health of queer folks compared to non-queer folks, which is possible (perhaps through making the mental health of non-queer folks worse) but not what I expected; I thought one way to clarify would be to limit the analysis to anti-trans laws that limited healthcare rights (for minors or others), since these are seen as perhaps the most restrictive
+    - reviewed all passed laws from part "B" on LegiScan, and marked them as having to do with trans healthcare or not
         
 3. Difference-in-Differences Analysis
     
