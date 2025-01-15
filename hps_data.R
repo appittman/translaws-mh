@@ -235,3 +235,62 @@ save(hps_data,
      compress = "bzip2")
 
 
+
+
+
+######################### ROUND TWO: replicate weights (dun dun dunnnnn)
+## after some analysis, realized that I really do need the replicate weights to calculate means
+
+
+if (file.exists(here("repwgtfiles"))) {
+  print("you've already got a replicate weights directory here...TRIPLE awkward")
+} else {
+  dir.create(here("repwgtfiles"))
+}
+
+
+#### here's what one of the weeks looks like
+
+unzip(here("zipfiles", "HPS_Week34_PUF_CSV.zip"), list = TRUE)
+
+###### each week has a replicate weights csv in the zip file, get the filenames
+
+repwgt_filenames <- map(here("zipfiles", dir(here("zipfiles"))),
+    ~unzip(.x, list = TRUE)) |> 
+  tibble() |> 
+  unnest(everything()) |> 
+  filter(str_detect(Name, ".csv") & str_detect(Name, "repwgt")) |> 
+  pull(Name)
+
+
+#### unzip one to see what it looks like and grab relevant columns
+
+unzip(here("zipfiles", dir(here("zipfiles"))[1]), files = repwgt_filenames[1],
+  exdir = here("repwgtfiles"))
+
+col_names <- read_csv(here("repwgtfiles", "pulse2021_repwgt_puf_34.csv")) |> 
+  colnames() |> 
+  str_subset("PW|SCRAM|WEEK")
+
+#### unzip all of them
+
+map2(.x = here("zipfiles", dir(here("zipfiles"))),
+     .y = repwgt_filenames,
+     .f = ~unzip(.x, files = .y, exdir = here("repwgtfiles")))
+
+#### get the relevant columns from the csvs and organize into one big dataframe
+
+wgtlist <- map(.x = here("repwgtfiles", dir(here("repwgtfiles"))), 
+                .f = ~read_csv(.x,
+                               col_select = col_names))
+
+wgtlist <- wgtlist |> 
+  tibble() |> 
+  unnest(everything()) |> 
+  clean_names() |> 
+  rename(id = scram)
+
+
+#### this is a big mambo jambo. only load him when you need to.
+
+save(wgtlist, file = here("data", "wgtlist.Rdata"))
