@@ -8,3 +8,7 @@ past/
 *.html
 .DS_Store
 data/
+csvfiles/
+data_raw/
+repwgtfiles/
+zipfiles/
