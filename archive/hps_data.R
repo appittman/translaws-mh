@@ -230,6 +230,11 @@ hps_data <- hps_data |> select(id, state, week, queer, cis_lgbq, trans_gnc,
 
 #### congrats! you now have all of the Household Pulse Survey data
 
+
+#### i've decided to only use week 40 on, so...
+hps_data <- hps_data |> 
+  filter(week > 39)
+
 save(hps_data,
      file = here("data", "hps_data.Rdata"), 
      compress = "bzip2")
