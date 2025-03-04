@@ -1,0 +1,519 @@
+---
+title: "BRFSS data analysis"
+format: html
+editor: visual
+---
+
+## Background
+
+I started this project by analyzing Household Pulse Survey data, with the intent of doing a difference-in-differences analysis; unfortunately, parallel trends were not met, and the sample of LGBTQ+ individuals was small enough that most of the result was just noise.
+
+So, now I'm taking a different tack: looking at states over periods of years, and comparing mental health of the population in those years.
+
+This will require BRFSS data.
+
+# 1. BRFSS
+
+```{r}
+#| label: setup
+
+library(tidyverse)
+library(here)
+library(rvest)
+library(janitor)
+library(haven)
+
+if (dir.exists(here("codebooks"))) {
+  message("Codebooks will be saved in ", here("codebooks"))
+} else {
+  dir.create(here("codebooks"))
+  message("Codebooks will be saved in ", here("codebooks"))
+}
+
+if (dir.exists(here("data_raw"))) {
+  message("Raw datafiles will be saved in ", here("data_raw"))
+} else {
+  dir.create(here("data_raw"))
+  message("Raw datafiles will be saved in ", here("data_raw"))
+}
+
+if (dir.exists(here("data_clean"))) {
+  message("Cleaned datafiles will be saved in ", here("data_clean"))
+} else {
+  dir.create(here("data_clean"))
+  message("Cleaned datafiles will be saved in ", here("data_clean"))
+}
+```
+
+```{r}
+#| label: fetching htmls
+
+# the BRFSS pages have a common url pattern, which makes this easier
+# i'm using data from 2016 to 2023
+
+urls <- tibble(years = c(2016:2023)) |> 
+  mutate(urls = paste0("https://www.cdc.gov/brfss/annual_data/annual_", years, ".html"))
+
+htmls <- urls$urls |> 
+  set_names() |> 
+  map(~read_html(.x))
+```
+
+```{r}
+#| label: downloading zipfiles
+
+# the data come in ascii format and SAS xpt format; I find the xpt easier to work with, so...
+
+get_xpt_link <- function(html) {
+ xpt_link <-  html |> 
+    html_elements("a") |> 
+    html_attr("href") |> 
+    str_subset("XPT.zip")
+ return(xpt_link)
+}
+
+zipfiles <- map(htmls, ~get_xpt_link(.x)) |> 
+  tibble() |> 
+  unnest_longer(1) |> 
+  rename(urlend = 1) |> 
+  mutate(ziplinks = paste0("https://www.cdc.gov", urlend),
+         filename = basename(ziplinks))
+
+map2(.x = zipfiles$ziplinks, .y = zipfiles$filename,
+     ~curl::curl_download(url = .x, 
+                          destfile = here("data_raw", .y), 
+                          quiet = FALSE))
+```
+
+```{r}
+#| label: unzipping data
+
+# first list the contents, make sure there's not multiple files in there
+map(here("data_raw", dir(here("data_raw"))),
+    ~unzip(.x, list = TRUE))
+
+# now unzip
+
+map(here("data_raw", dir(here("data_raw"))),
+    ~unzip(.x, exdir = here("data_raw")))
+
+# now you can get rid of the zipfiles
+
+here("data_raw", dir(here("data_raw"))) |> 
+  str_subset(".zip") |> 
+  map(~file.remove(.x))
+
+# check it
+
+dir(here("data_raw"))
+
+# a quirk about the BRFSS data is that the XPT files have a space at the end of their filepath; here's a way to remove it
+
+filename_fix <- tibble(old = dir(here("data_raw"))) |> 
+  mutate(new = str_squish(old))
+
+
+map2(.x = filename_fix$old, .y = filename_fix$new,
+     ~file.rename(from = paste0(here("data_raw"), "/", .x), 
+                  to = paste0(here("data_raw"), "/", .y)))
+
+
+# check
+dir(here("data_raw"))
+```
+
+```{r}
+#| label: codebooks
+
+# in order to read in only the data we need, we need the codebooks
+
+
+get_codebook_link <- function(html) {
+  codebook <- html |> 
+    html_elements("a") |> 
+    html_attr("href") |> 
+    str_subset("codebook")
+  return(codebook)
+}
+
+codebooks <- map(htmls, ~get_codebook_link(.x)) |> 
+  tibble() |> 
+  unnest_longer(1) |> 
+  rename(urlend = 1) |> 
+  mutate(codelinks = paste0("https://www.cdc.gov", urlend),
+         filenames = basename(codelinks))
+
+map2(.x = codebooks$codelinks,
+     .y = codebooks$filenames,
+     ~curl::curl_download(.x, destfile = here("codebooks", .y),
+                          quiet = FALSE))
+
+#2022 & 2023 are zipfiles
+
+map(here("codebooks", 
+         str_subset(dir(here("codebooks")), ".zip")),
+    ~unzip(.x, exdir = here("codebooks")))
+    
+# cleaning up
+
+here("codebooks", dir(here("codebooks"))) |> 
+  str_subset(".zip") |> 
+  map(~file.remove(.x))
+
+codebook_fix <- tibble(old = dir(here("codebooks"))) |> 
+  mutate(beginning = str_extract(old, "([0-9]+)"),
+         end = str_extract(old, "\\.[A-Za-z]+"),
+         new = paste0("codebook", beginning, end))
+
+map2(.x = paste0(here("codebooks"), "/", codebook_fix$old),
+.y = paste0(here("codebooks"), "/", codebook_fix$new),
+~file.rename(from = .x, to = .y))
+```
+
+```{r}
+#| label: reading in the data
+
+datalist <- here("data_raw", dir(here("data_raw"))) |> 
+  set_names(nm = basename) |> 
+  map(~read_xpt(.x,
+         col_select = any_of(c("_STATE",
+             "_RACE",
+             "_RACE1",
+             "_AGE80",
+             "SEX",
+             "SEX1",
+             "SXORIENT",
+             "SOMALE",
+             "SOFEMALE",
+             "SEXVAR",
+             "TRNSGNDR",
+             "EDUCA",
+             "MARITAL",
+             "GENHLTH",
+             "MENTHLTH",
+             "PHYSHLTH",
+             "POORHLTH",
+             "_LLCPWT"))))
+```
+
+```{r}
+#| label: data cleaning
+
+datalist <- map(datalist, ~zap_label(.x)) # saves a bunch of space
+
+# 2016 and 2017 need to be cleaned separately from the others, bc they have a different number of variables
+
+datalist1 <- datalist |> 
+  keep(str_detect(names(datalist), "(2016)|(2017)"))
+
+datalist2 <- datalist |> 
+  discard(str_detect(names(datalist), "(2016)|(2017)"))
+
+
+# first one first
+
+data1 <- map(datalist1, clean_names) |> 
+  map2(.y = names(datalist1),
+       ~mutate(.x, source = .y)) |> 
+  bind_rows() |>
+  mutate(across(c(physhlth, menthlth, poorhlth), #mental/physical health days
+                ~case_match(.x,
+                           88 ~ 0,
+                           c(77,99) ~ NA_integer_,
+                           .default = .x)),
+         genhlth = case_match(genhlth,
+                              c(7,9) ~ NA_integer_,
+                              c(1:5) ~ 6 - genhlth,
+                              .default = genhlth),# reverse coding so higher is better health
+         female = case_match(sex,
+                             9 ~ NA_integer_,
+                             2 ~ 1,
+                             1 ~ 0), # making a binary variable for sex
+         marital = case_match(marital,
+                              c(1,6) ~ "marpar",
+                              c(2:4) ~ "divwidsep",
+                              5 ~ "nevmar",
+                              9 ~ NA_character_,
+                              .default = as.character(marital)),
+         # collapsing into 3 categories
+         educa = case_match(educa,
+                            c(1:3) ~ "lths",
+                            4 ~ "hsgrad",
+                            5 ~ "somcol",
+                            6 ~ "colgrad",
+                            9 ~ NA_character_,
+                            .default = as.character(educa)),
+         # collapsing into 4 categories
+         sxorient = case_match(sxorient,
+                               1 ~ "st",
+                               2 ~ "gay",
+                               3 ~ "bi",
+                               4 ~ "oth",
+                               c(7,9) ~ NA_character_,
+                             .default = as.character(sxorient)),
+         # recoding to character variable
+         tgnc = case_match(trnsgndr,
+                           c(1:3) ~ 1,
+                           4 ~ 0,
+                           c(7,9) ~ NA_integer_,
+                           .default = trnsgndr),
+         # making a binary variable: trans/gender non-conforming or not
+         race = case_match(race,
+                           1 ~ "nhw",
+                           2 ~ "nhb",
+                           c(3:7) ~ "othmult",
+                           8 ~ "hisp",
+                           9 ~ NA_character_),
+         # collapsing to 4 categories
+         age = age80,
+         state_code = state) |>
+  select(state_code, source, sxorient, tgnc, 
+         marital, female, race, age, educa,
+         genhlth, physhlth, menthlth, poorhlth) |> 
+# originally 936,319 observations
+  drop_na(sxorient)
+
+
+## second one 
+
+rename_sex <- function(df) {
+  sexvar <- colnames(df) |> str_subset("SEX")
+  
+  df <- df |> 
+    rename(sex = all_of(sexvar))
+  
+  return(df)
+} # need to make sure all of these 
+
+data2 <- map(datalist2, rename_sex) |> 
+  map(clean_names) |> 
+  map2(.y = names(datalist2),
+       ~mutate(.x, source = .y)) |> 
+  bind_rows() |>
+  mutate(across(c(physhlth, menthlth, poorhlth), #mental/physical health days
+                ~case_match(.x,
+                           88 ~ 0,
+                           c(77,99) ~ NA_integer_,
+                           .default = .x)),
+         genhlth = case_match(genhlth,
+                              c(7,9) ~ NA_integer_,
+                              c(1:5) ~ 6 - genhlth,
+                              .default = genhlth),# reverse coding so higher is better health
+         female = case_match(sex,
+                             9 ~ NA_integer_,
+                             2 ~ 1,
+                             1 ~ 0), # making a binary variable for sex
+         marital = case_match(marital,
+                              c(1,6) ~ "marpar",
+                              c(2:4) ~ "divwidsep",
+                              5 ~ "nevmar",
+                              9 ~ NA_character_,
+                              .default = as.character(marital)),
+         # collapsing into 3 categories
+         educa = case_match(educa,
+                            c(1:3) ~ "lths",
+                            4 ~ "hsgrad",
+                            5 ~ "somcol",
+                            6 ~ "colgrad",
+                            9 ~ NA_character_,
+                            .default = as.character(educa)),
+         # collapsing into 4 categories
+         sxorient = case_when(sex == 2 ~ sofemale,
+                              sex == 1 ~ somale),
+         sxorient = case_match(sxorient,
+                               1 ~ "gay",
+                               2 ~ "st",
+                               3 ~ "bi",
+                               4 ~ "oth",
+                               c(7,9) ~ NA_character_,
+                             .default = as.character(sxorient)),
+         # recoding to character variable
+         tgnc = case_match(trnsgndr,
+                           c(1:3) ~ 1,
+                           4 ~ 0,
+                           c(7,9) ~ NA_integer_,
+                           .default = trnsgndr),
+         # making a binary variable: trans/gender non-conforming or not
+         race = case_match(race,
+                           1 ~ "nhw",
+                           2 ~ "nhb",
+                           c(3:7) ~ "othmult",
+                           8 ~ "hisp",
+                           9 ~ NA_character_),
+         # collapsing to 4 categories
+         age = age80,
+         state_code = state) |> 
+  select(state_code, source, sxorient, tgnc, 
+         marital, female, race, age, educa,
+         genhlth, physhlth, menthlth, poorhlth) |> 
+  # had 2574810 observations
+  drop_na(sxorient)
+
+
+brfss <- bind_rows(data1, data2) |> 
+  mutate(year = as.numeric(str_extract(source, "[0-9]+"))) |> 
+  relocate(year, .after = "state_code") |> 
+  relocate(source, .after = everything())
+
+```
+
+```{r}
+#| label: saving cleaned brfss data
+
+save(brfss, file = here("data_clean", "brfss.Rdata"))
+
+```
+
+once you've checked to make sure that the BRFSS data is saved, you can run the chunk below to clean up. CHECK FIRST!!!!!!! otherwise you'll have to do most of this over again.
+
+```{r}
+#| label: halftime cleanup
+
+rm(list = ls())
+gc()
+```
+
+# 2. Anti-Trans Laws
+
+```{r}
+#| label: data acquisition
+
+laws <- list(
+  # first two are text-based
+laws18 = read_html("https://www.aclu.org/documents/past-legislation-affecting-lgbt-rights-across-country-2018"),
+
+laws19 = read_html("https://www.aclu.org/documents/past-legislation-affecting-lgbt-rights-across-country-2019"),
+
+# then we have a few csvs...
+laws20 = read_csv("https://www.aclu.org/wp-content/uploads/2024/01/legislation-tracker_2020.csv", skip = 1),
+
+laws21 = read_csv("https://www.aclu.org/wp-content/uploads/2024/01/2021-legislation-tracker_2021.csv"),
+
+laws22 = read_csv("https://www.aclu.org/wp-content/uploads/2024/01/legislation-tracker_2022.csv"),
+
+laws23 = read_csv("https://wp.api.aclu.org/wp-json/api/legislation/csv/67497", n_max = 510))
+
+
+```
+
+```{r}
+#| label: data cleaning
+
+# need to clean up laws18 and laws19
+# this is very ad hoc coding but i really couldn't be bothered to come up with a more general solution - aclu if you're reading this CLEAN UP YOUR ARCHIVED WEB PAGES JESUS H
+
+state_pattern <- "\\b(A[KLZR]|C[AOT]|DE|FL|GA|HI|IA|ID|IL|IN|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)"
+
+laws$laws18 <- laws$laws18 |> 
+  html_text2() |> 
+  read_delim(delim = "\n", skip = 37) |> 
+  rename(text = 1) |> 
+  mutate(state = str_extract(text, state_pattern),
+         bill = str_extract(text, "[A-Z]+ [1-9]+"),
+         date = str_extract(text, 
+                            "\\d{1,2}/\\d{1,2}/\\d{4}")) |> 
+  fill(state, bill, .direction = "down") |> 
+  drop_na() |> 
+  select(-text) |> 
+  mutate(date = mdy(date))
+
+
+laws$laws19 <- laws$laws19 |> 
+  html_text2() |> 
+  read_delim(delim = "\n", skip = 45) |> 
+  rename(text = 1) |> 
+  mutate(text = str_remove_all(text, "(DEAD)|(BILL)")) |> 
+  mutate(text = str_split(text, 
+            pattern = paste0("(?=(", state_pattern, "))"), 
+            simplify = FALSE)) |> 
+  unnest_longer(text) |> 
+  filter(str_detect(text, ".+")) |> 
+  mutate(state = str_extract(text, state_pattern)) |>
+  mutate(date_raw = str_extract(text, 
+                          "(\\d{1,2}/\\d{1,2}/\\d{4})\\b"),
+         date_raw = str_split(date_raw, pattern = "/")) |> 
+  unnest_wider(date_raw, names_sep = "_") |> 
+  mutate(date_raw_1 = if_else(as.integer(date_raw_1) > 12,
+                              str_sub(date_raw_1, start = 2),
+                              date_raw_1),
+         date = if_else(!is.na(date_raw_1),
+                        paste(date_raw_1, date_raw_2,
+                              date_raw_3, sep = "/"),
+                        NA_character_)) |> 
+  select(-starts_with("date_raw")) |> 
+  mutate(text = if_else(str_detect(text, ":"),
+                        str_remove_all(text, ":.*"),
+                        text)) |> 
+  filter(!str_detect(text,                   "^(State|Bill|Status|These|Would|doc|Allow|RFRA|d\\.|a\\.|Incomplete)")) |>
+  mutate(id = cumsum(!is.na(state))) |> 
+  mutate(bill = case_when(is.na(state) & is.na(date) ~
+                            str_squish(text),
+                          str_detect(text, "[A-Z]+[[:space:]]*[0-9]+") ~
+                            str_remove(text, state_pattern)),
+         bill = if_else(str_detect(bill, "/"),
+                        str_remove(bill, date),
+                        bill)) |> 
+  select(-text) |> 
+  group_by(id) |> 
+  fill(state, bill, .direction = "down") |> 
+  drop_na() |> 
+  mutate(bill = str_squish(bill)) |> 
+  unique() |> 
+  ungroup() |> 
+  select(state, bill, date) |> 
+  mutate(date = mdy(date))
+
+######### the other years, thank god, are easier.
+
+
+laws$laws20 <- laws$laws20 |> 
+  clean_names() |> 
+  select(state_name = state, bill = bill_name,
+         date = status_date) |> 
+  left_join(tibble(state_name = state.name, state = state.abb)) |> 
+  select(state, bill, date) |> 
+  mutate(date = mdy(date))
+
+laws$laws21 <- laws$laws21 |> 
+  clean_names() |> 
+  select(state_name = state, bill = bill_name,
+         date = status_date) |> 
+  left_join(tibble(state_name = state.name, state = state.abb)) |> 
+  select(state, bill, date) |> 
+  mutate(date = mdy(date))
+
+laws$laws22 <- laws$laws22 |> 
+  clean_names() |> 
+  select(state_name = state, bill = bill_name,
+         date = status_date) |> 
+  left_join(tibble(state_name = state.name, state = state.abb)) |> 
+  select(state, bill, date) |> 
+  mutate(date = mdy(date))
+
+laws$laws23 <- laws$laws23 |> 
+  clean_names() |> 
+  select(state_name = state, bill = bill_name,
+         date = status_date) |> 
+  left_join(tibble(state_name = state.name, state = state.abb)) |> 
+  select(state, bill, date) |> 
+  mutate(date = mdy(date))
+
+laws <- laws |> 
+  bind_rows()
+
+```
+
+```{r}
+#| label: saving laws data
+save(laws, file = here("data_clean", "laws.Rdata"))
+
+```
+
+```{r}
+#| label: cleanup
+
+rm(list = ls())
+gc()
+
+```
+
