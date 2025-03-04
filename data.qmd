@@ -484,10 +484,8 @@ laws$laws21 <- laws$laws21 |>
 
 laws$laws22 <- laws$laws22 |> 
   clean_names() |> 
-  select(state_name = state, bill = bill_name,
+  select(state = state, bill = bill_name,
          date = status_date) |> 
-  left_join(tibble(state_name = state.name, state = state.abb)) |> 
-  select(state, bill, date) |> 
   mutate(date = mdy(date))
 
 laws$laws23 <- laws$laws23 |> 
@@ -498,9 +496,13 @@ laws$laws23 <- laws$laws23 |>
   select(state, bill, date) |> 
   mutate(date = mdy(date))
 
-laws <- laws |> 
-  bind_rows()
 
+# a lot of empty rows at the end of the CSVs - need to get rid of those
+
+laws <- map(laws,
+    ~drop_na(.x))
+
+laws <- laws |> bind_rows()
 ```
 
 ```{r}
@@ -516,4 +518,3 @@ rm(list = ls())
 gc()
 
 ```
-
