@@ -10,8 +10,11 @@ making some visualizations for the poster presentation
 library(tidyverse)
 library(here)
 library(colorspace)
-load(here("data_clean", "analytic_datasets.Rdata"))
+library(did)
+load(here("data_clean", "hps_data.Rdata"))
+load(here("data_clean", "analytic_datasets_trans.Rdata"))
 load(here("did_results", "didt_te.Rdata"))
+load(here("data_clean", "laws.Rdata"))
 ```
 
 first, here's a visualization of when states passed anti-trans laws
@@ -48,15 +51,40 @@ average treatment effect visualization
 ```{r}
 
 
-ggdid(didt_te) +
-  labs(title = "Average Effect on PHQ-4 Score\nby Time Since First Anti-Trans Law Passed in State\n(Trans/GNC vs. Larger Queer Community)") +
+ggdid(didt_te_2) +
+  labs(x = "Waves Since First Anti-Trans Law Passed in State",
+       y = "Aggregated Treatment Effect",
+       title = "") +
   scale_color_manual(values = c("royalblue", "tomato"),
                      labels = c("Pre", "Post")) +
   geom_vline(xintercept = -.5, linetype = "dashed") +
   geom_hline(yintercept = 0) +
-  geom_segment(aes(x = -.5, xend = 10.5, y = .8233), color = "tomato",
+  geom_segment(aes(x = -.5, xend = 10.5, y = 1.4151), color = "tomato",
                linetype = "dotted") +
-  geom_text(x = 11.5, y = .8233, label = "Overall\nATT *", color = "tomato") +
+  geom_text(x = 11.5, y = 1.4151, label = "Overall\nATT *", color = "tomato") +
   theme(plot.margin = unit(c(1,1,1,1), "cm")) +
   coord_cartesian(clip = "off")
+```
+
+trends in phq-4 visualization
+
+```{r}
+hps_data |> 
+  filter(time < 31) |> 
+  select(time, anxious, worry, interest, down, trans_gnc, queer, pweight) |>
+  mutate(phq4 = anxious + worry + interest + down - 4) |> 
+  drop_na(trans_gnc, queer, phq4) |> 
+  mutate(group = case_when(queer == 0 & trans_gnc == 0 ~ "Cisgender Heterosexual",
+                           queer == 1 & trans_gnc == 0 ~ "Cisgender Queer",
+                           trans_gnc == 1 ~ "Trans/Gender Non-Conforming")) |> 
+  group_by(time, group) |> 
+  summarize(mean_phq = weighted.mean(phq4, w = pweight)) |> 
+  ggplot(aes(x = time, y = mean_phq, group = group, color = group)) +
+  geom_line() +
+  labs(x = "Wave",
+       y = "Average PHQ-4 Score",
+       color = "") +
+  theme_minimal() +
+  theme(legend.position = "bottom") +
+  scale_color_manual(values = c("tomato", "royalblue", "purple4"))
 ```

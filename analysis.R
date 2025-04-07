@@ -118,4 +118,26 @@ ggdid(didt_te)
   
 save(didt_te, file = here("did_results", "didt_te.Rdata"))
   
+# weird things happen at the phase 3/4 switchover...i'll figure that out in the future
+# until then...
+
+dt_2 <- dt |> 
+  filter(time < 31)
+
+didt_2 <- att_gt(data = dt_2,
+                 yname = "phq4",
+                 tname = "time",
+                 gname = "treatment_time",
+                 panel = FALSE,
+                 weightsname = "pweight")
+
+
+didt_te_2 <- aggte(didt_2,
+                   type = "dynamic",
+                   min_e = -10,
+                   max_e = 10)
+
+save(didt_2, file = here("did_results", "didt_2.Rdata"))
+
+didt_te_2
 
