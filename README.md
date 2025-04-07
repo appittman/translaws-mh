@@ -1,2 +1,2 @@
 # Anti-Trans Laws and Mental Health: Spillover Effects
-one of my dissertation papers, about how anti-trans laws impact mental health
+one of my dissertation papers, about how anti-trans laws impact mental health. if you want to replicate my analysis, first run "laws.R" and "hps_data.R", then run "data_merge.R", and finally run "analysis.R"

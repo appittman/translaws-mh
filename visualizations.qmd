@@ -1,0 +1,62 @@
+---
+title: "Anti-Trans Laws and Mental Health: Visualizations"
+format: html
+editor: visual
+---
+
+making some visualizations for the poster presentation
+
+```{r}
+library(tidyverse)
+library(here)
+library(colorspace)
+load(here("data_clean", "analytic_datasets.Rdata"))
+load(here("did_results", "didt_te.Rdata"))
+```
+
+first, here's a visualization of when states passed anti-trans laws
+
+```{r}
+mapdata <- tibble(map_data("state"))
+
+lawsdata <- laws |> 
+  group_by(state_name, type) |> 
+  summarize(n = n()) |> 
+  pivot_wider(id_cols = "state_name",
+              names_from = "type",
+              values_from = "n",
+              values_fill = 0) |> 
+  mutate(state_name = tolower(state_name),
+         laws_total = bathroom + medical + sports) |> 
+  right_join(mapdata, by = c("state_name" = "region")) |> 
+  mutate(laws_total = if_else(is.na(laws_total), 0, laws_total))
+  
+
+ggplot(data = lawsdata) +
+  geom_polygon(aes(x = long, y = lat, group = group, fill = laws_total), color = "black", size = .3) +
+  coord_map(projection = "albers", lat0 = 25, lat1 = 49) +
+  scale_fill_continuous_sequential(palette = "Reds 3") +
+  theme_void() +
+  theme(legend.position = "bottom") +
+  labs(fill = "Number of\nAnti-Trans Laws\nPassed Since 2016")
+
+
+```
+
+average treatment effect visualization
+
+```{r}
+
+
+ggdid(didt_te) +
+  labs(title = "Average Effect on PHQ-4 Score\nby Time Since First Anti-Trans Law Passed in State\n(Trans/GNC vs. Larger Queer Community)") +
+  scale_color_manual(values = c("royalblue", "tomato"),
+                     labels = c("Pre", "Post")) +
+  geom_vline(xintercept = -.5, linetype = "dashed") +
+  geom_hline(yintercept = 0) +
+  geom_segment(aes(x = -.5, xend = 10.5, y = .8233), color = "tomato",
+               linetype = "dotted") +
+  geom_text(x = 11.5, y = .8233, label = "Overall\nATT *", color = "tomato") +
+  theme(plot.margin = unit(c(1,1,1,1), "cm")) +
+  coord_cartesian(clip = "off")
+```
