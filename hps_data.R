@@ -38,13 +38,13 @@ if (dir.exists(here("data_raw", "hps"))) {
 ############################ Step 1: get a list of urls
 # need weeks 34 and up
 
-html24 <- read_html("https://www.census.gov/programs-surveys/household-pulse-survey/data/datasets.html")
+html24 <- read_html("https://www.census.gov/programs-surveys/household-pulse-survey/data/datasets.2024.html")
 
-html23 <- read_html("https://www.census.gov/programs-surveys/household-pulse-survey/data/datasets.2023.html#list-tab-1264157801")
+html23 <- read_html("https://www.census.gov/programs-surveys/household-pulse-survey/data/datasets.2023.html")
 
-html22 <- read_html("https://www.census.gov/programs-surveys/household-pulse-survey/data/datasets.2022.html#list-tab-1264157801")
+html22 <- read_html("https://www.census.gov/programs-surveys/household-pulse-survey/data/datasets.2022.html")
 
-html21 <- read_html("https://www.census.gov/programs-surveys/household-pulse-survey/data/datasets.2021.html#list-tab-1264157801")
+html21 <- read_html("https://www.census.gov/programs-surveys/household-pulse-survey/data/datasets.2021.html")
 
 
 urls <- map(list(html21, html22, html23, html24),

@@ -64,14 +64,8 @@ text <- dir(here("data_raw", "laws")) |>
 
 laws_data <- map(text, ~read_delim(.x, delim = "\n") |> 
                    rename(data = 1) |> 
-      
-      
-      
-      
-      
-      
                    mutate(data = str_squish(data)) |> 
-                   filter(!str_detect(data, "^20")) |> 
+                   filter(!str_detect(data, "^20[[:digit:]]")) |> 
                    mutate(drop = if_else(str_detect(data, "Order of Governor Vetoes"), 1, 0),
                           drop = cumsum(drop)) |> 
                    filter(drop == 0) |> 
@@ -95,12 +89,56 @@ laws <- tibble(laws_data) |>
     str_detect(pdf_name, "sports") ~ "sports",
     str_detect(pdf_name, "medical") ~ "medical"
   )) |> 
-  arrange(date)
+  arrange(date) |> 
+  drop_na(bill)
 
 laws <- tibble(state_name = state.name, state = state.abb) |> 
-  right_join(laws) 
+  right_join(laws)
 
-laws <- laws |> 
-  drop_na(date)
 
-save(laws, file = here("data_clean", "laws.Rdata"))
+
+first_bathroom <- laws |> 
+  filter(type == "bathroom") |> 
+  group_by(state) |> 
+  slice_min(date, with_ties = FALSE) |> 
+  select(state,
+         state_name,
+         bathroom_bill = bill,
+         bathroom_date = date)
+
+first_sports <- laws |> 
+  filter(type == "sports") |> 
+  group_by(state) |> 
+  slice_min(date, with_ties = FALSE) |> 
+  select(state,
+         state_name,
+         sports_bill = bill,
+         sports_date = date)
+
+first_medical <- laws |> 
+  filter(type == "medical") |> 
+  group_by(state) |> 
+  slice_min(date, with_ties = FALSE) |> 
+  select(state,
+         state_name,
+         medical_bill = bill,
+         medical_date = date)
+
+
+first_overall <- laws |> 
+  group_by(state) |> 
+  slice_min(date, with_ties = FALSE) |> 
+  select(state,
+         state_name,
+         first_bill = bill,
+         first_date = date)
+
+
+laws_data <- tibble(state = state.abb, state_name = state.name) |> 
+  left_join(first_overall) |> 
+  left_join(first_bathroom) |> 
+  left_join(first_sports) |> 
+  left_join(first_medical)
+
+save(laws_data, file = here("data_clean", "first_laws.Rdata"))
+save(laws, file = here("data_clean", "all_laws.Rdata"))
