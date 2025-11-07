@@ -52,7 +52,7 @@ average treatment effect visualization
 ```{r}
 
 
-ggdid(didf_te_controlled) +
+did_plot <- ggdid(didf_te_controlled) +
   labs(x = "Waves Since First Anti-Trans Law Passed in State",
        y = "Aggregated Treatment Effect",
        title = "") +
@@ -60,11 +60,22 @@ ggdid(didf_te_controlled) +
                      labels = c("Pre", "Post")) +
   geom_vline(xintercept = -.5, linetype = "dashed") +
   geom_hline(yintercept = 0) +
-  geom_segment(aes(x = -.5, xend = 10.5, y = 1.4151), color = "tomato",
+  geom_segment(aes(x = -.5, xend = 10.5, y = 1.3853), color = "tomato",
+               linetype = "dashed") +
+  geom_segment(aes(x = -.5, xend = 10.5, y = 0.6402), color = "tomato",
                linetype = "dotted") +
-  geom_text(x = 11.5, y = 1.4151, label = "Overall\nATT *", color = "tomato") +
+  geom_segment(aes(x = -.5, xend = 10.5, y = 2.1304), color = "tomato",
+               linetype = "dotted") +
+  geom_rect(aes(ymin = .6402, ymax = 2.1304, xmin = -.5, xmax = 10.5), fill = "tomato", alpha = 0.005) +
+  geom_text(aes(x = 12, y = 1.3853), label = "Estimate and\n95% CI for\nOverall\nTreatment\nEffect", color = "tomato", size = 2.5) +
+  geom_segment(aes(x = 10.9, y = .6402, yend = 2.1304), color = "tomato", linewidth = .2) +
+  geom_segment(aes(y = .6402, x = 10.7, xend = 10.9), color = "tomato",
+               linewidth = .2) +
+  geom_segment(aes(y = 2.1304, x = 10.7, xend = 10.9), color = "tomato",
+               linewidth = .2) +
   theme(plot.margin = unit(c(1,1,1,1), "cm")) +
   coord_cartesian(clip = "off")
+
 ```
 
 trends in phq-4 visualization
