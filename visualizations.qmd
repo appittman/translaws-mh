@@ -11,10 +11,11 @@ library(tidyverse)
 library(here)
 library(colorspace)
 library(did)
-load(here("data_clean", "hps_data.Rdata"))
-load(here("data_clean", "analytic_datasets_trans.Rdata"))
-load(here("did_results", "didt_te.Rdata"))
-load(here("data_clean", "laws.Rdata"))
+load(here("data_clean", "datasets_notreatmentgroup.Rdata"))
+load(here("did_results", "te_transgnc.Rdata"))
+load(here("did_results", "did_transgnc.Rdata"))
+load(here("data_clean", "first_laws.Rdata"))
+load(here("data_clean", "all_laws.Rdata"))
 ```
 
 first, here's a visualization of when states passed anti-trans laws
@@ -51,7 +52,7 @@ average treatment effect visualization
 ```{r}
 
 
-ggdid(didt_te_2) +
+ggdid(didf_te_controlled) +
   labs(x = "Waves Since First Anti-Trans Law Passed in State",
        y = "Aggregated Treatment Effect",
        title = "") +
@@ -69,10 +70,9 @@ ggdid(didt_te_2) +
 trends in phq-4 visualization
 
 ```{r}
-hps_data |> 
+hps_data_first |> 
   filter(time < 31) |> 
-  select(time, anxious, worry, interest, down, trans_gnc, queer, pweight) |>
-  mutate(phq4 = anxious + worry + interest + down - 4) |> 
+  select(time, phq4, trans_gnc, queer, pweight) |>
   drop_na(trans_gnc, queer, phq4) |> 
   mutate(group = case_when(queer == 0 & trans_gnc == 0 ~ "Cisgender Heterosexual",
                            queer == 1 & trans_gnc == 0 ~ "Cisgender Queer",
@@ -87,8 +87,4 @@ hps_data |>
   theme_minimal() +
   theme(legend.position = "bottom") +
   scale_color_manual(values = c("tomato", "royalblue", "purple4"))
-```
-
-```{r}
-
 ```
