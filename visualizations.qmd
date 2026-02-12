@@ -76,6 +76,8 @@ did_plot <- ggdid(didf_te_controlled) +
   theme(plot.margin = unit(c(1,1,1,1), "cm")) +
   coord_cartesian(clip = "off")
 
+
+didf_te_controlled
 ```
 
 trends in phq-4 visualization
