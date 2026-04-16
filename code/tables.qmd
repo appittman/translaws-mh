@@ -1,0 +1,135 @@
+---
+title: "Anti-Trans Laws and Mental Health: Tables"
+format: html
+editor: visual
+execute: 
+  echo: false
+  warning: false
+  message: false
+---
+
+# setup
+
+```{r}
+#| label: loading in data and packages
+
+library(tidyverse)
+library(here)
+library(did)
+load(here("did_results", "did_controlled.Rdata"))
+load(here("did_results", "did.Rdata"))
+load(here("data_clean", "hps_data.Rdata"))
+load(here("data_clean", "datasets_transgnc.Rdata"))
+
+```
+
+# Main Results
+
+## Table 1. Sample Characteristics
+
+```{r}
+#| label: sample characteristics
+
+stat_b <- dt_bathroom |> 
+  select(id, age, treatment_time, female, queer, trans_gnc,
+         coldeg, race_rc, phq4) |> 
+  mutate(group = if_else(treatment_time == 0,
+                         "control",
+                         "treated")) |> 
+  group_by(group) |> 
+  summarize(n = n(),
+            mean_age = mean(age),
+            sd_age = sd(age),
+            pct_female = mean(female),
+            pct_coldeg = mean(coldeg),
+            pct_white = mean(race_rc == 1),
+            pct_black = mean(race_rc == 2),
+            pct_other = mean(race_rc == 3),
+            pct_hisp = mean(race_rc == 4),
+            mean_phq4 = mean(phq4)) |> 
+  mutate(analysis = "bathroom")
+
+stat_f <- dt_first |> 
+  select(id, age, treatment_time, female, queer, trans_gnc,
+         coldeg, race_rc, phq4) |> 
+  mutate(group = if_else(treatment_time == 0,
+                         "control",
+                         "treated")) |> 
+  group_by(group) |> 
+  summarize(n = n(),
+            mean_age = mean(age),
+            sd_age = sd(age),
+            pct_female = mean(female),
+            pct_coldeg = mean(coldeg),
+            pct_white = mean(race_rc == 1),
+            pct_black = mean(race_rc == 2),
+            pct_other = mean(race_rc == 3),
+            pct_hisp = mean(race_rc == 4),
+            mean_phq4 = mean(phq4)) |> 
+  mutate(analysis = "first")
+
+stat_m <- dt_medical |> 
+  select(id, age, treatment_time, female, queer, trans_gnc,
+         coldeg, race_rc, phq4) |> 
+  mutate(group = if_else(treatment_time == 0,
+                         "control",
+                         "treated")) |> 
+  group_by(group) |> 
+  summarize(n = n(),
+            mean_age = mean(age),
+            sd_age = sd(age),
+            pct_female = mean(female),
+            pct_coldeg = mean(coldeg),
+            pct_white = mean(race_rc == 1),
+            pct_black = mean(race_rc == 2),
+            pct_other = mean(race_rc == 3),
+            pct_hisp = mean(race_rc == 4),
+            mean_phq4 = mean(phq4)) |> 
+  mutate(analysis = "medical")
+
+stat_s <- dt_sports |> 
+  select(id, age, treatment_time, female, queer, trans_gnc,
+         coldeg, race_rc, phq4) |> 
+  mutate(group = if_else(treatment_time == 0,
+                         "control",
+                         "treated")) |> 
+  group_by(group) |> 
+  summarize(n = n(),
+            mean_age = mean(age),
+            sd_age = sd(age),
+            pct_female = mean(female),
+            pct_coldeg = mean(coldeg),
+            pct_white = mean(race_rc == 1),
+            pct_black = mean(race_rc == 2),
+            pct_other = mean(race_rc == 3),
+            pct_hisp = mean(race_rc == 4),
+            mean_phq4 = mean(phq4)) |> 
+  mutate(analysis = "sports")
+  
+stat_full <- bind_rows(stat_b, stat_f, stat_m, stat_s) |> 
+  pivot_longer(cols = c(n:mean_phq4),
+               names_to = "stat",
+               values_to = "value") |> 
+  pivot_wider(id_cols = "stat",
+              names_from = c("analysis", "group"),
+              names_sep = "_",
+              values_from = "value")
+
+write_excel_csv(stat_full,
+                file = here("images", "desctable.csv"))
+
+```
+
+# Supplemental
+
+## eTable 1. Pre-tests of Parallel Trends
+
+```{r}
+#| label: parallel trends p-values
+
+
+```
+
+## eTable 3. Sample Comparisons
+
+## eTable 4. Group-Time Average Treatment Effects

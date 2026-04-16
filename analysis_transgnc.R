@@ -91,18 +91,24 @@ didf_te <- aggte(didf,
 
 didf_te
 
+dt_first |> 
+  group_by(nhw) |> 
+  summarize(n = n()) |> 
+  mutate(pct = n / sum(n))
+
 
 
 didf_controlled <- att_gt(data = dt_first,
-                          yname = "phq4",
-                          tname = "time",
-                          gname = "treatment_time",
-                          panel = FALSE,
-                          weightsname = "pweight",
-                          xformla = ~age+coldeg,
-                          print_details = TRUE,
-                          pl = TRUE,
-                          cores = 4)
+                             yname = "phq4",
+                             tname = "time",
+                             gname = "treatment_time",
+                             panel = FALSE,
+                             weightsname = "pweight",
+                             xformla = ~age+coldeg,
+                             print_details = TRUE,
+                             pl = TRUE,
+                             cores = 4)
+
 
 didf_te_controlled <- aggte(didf_controlled,
                             type = "dynamic",

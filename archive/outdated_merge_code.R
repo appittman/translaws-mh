@@ -1,20 +1,86 @@
-# in this file, I take the cleaned data and get it ready for analysis
 
-######################## Setup
+# panel setup
 
-library(tidyverse)
-library(here)
+first_laws <- all_laws |> 
+  group_by(state) |> 
+  slice_min(date, with_ties = F) |> # grab first one to pass in each state
+  right_join(tibble(state = state.abb), by = "state") |> # get the rest of the states
+  mutate(exclude = case_when(date <= mdy("July 21 2021") ~ 1,
+                             date > mdy("July 21 2021") ~ 0,
+                             is.na(date) ~ 0,
+                             .default = NA_integer_)) # create a flag to drop states which passed their first anti-trans law prior to data collection
 
-load(here("data_clean", "first_laws.Rdata"))
 
-# setting up the panel info in a smaller dataset to make it easier
-load(here("data_clean", "hps_data.Rdata"))
+firstlawpanel <- panelsetup |> 
+  left_join(first_laws, by = "state") |> 
+  group_by(state) |> 
+  mutate(post_time = case_when(is.na(date) ~ 0,
+                               date <= startdate + 7 ~ 1,
+                               date > startdate + 7 ~ 0),
+         treated_state = if_else(is.na(date), 0, 1),
+         treatment_time = if_else(treated_state == 1, 
+                                  as.numeric(sum(post_time == 0) + 1), 
+                                  Inf),
+         event_time = time - treatment_time,
+         period = case_when(time %in% c(1:9) ~ 1,
+                            time %in% c(10:21) ~ 2,
+                            time %in% c(22:30) ~ 3),
+         treatment_period = case_when(treatment_time %in% c(1:9) ~ 1,
+                                      treatment_time %in% c(10:21) ~ 2,
+                                      treatment_time %in% c(22:30) ~ 3,
+                                      .default = Inf),
+         post_period = case_when(period >= treatment_period ~ 1,
+                                 period < treatment_period ~ 0,
+                                 .default = NA_integer_))
 
-panelsetup <- hps_data |> 
-  group_by(state, time, startdate, enddate) |> 
-  summarize(n = n()) |> 
-  select(-n) |> 
-  ungroup()
+
+################## MERGE
+### doing some sample size code here for a methods section eventually
+
+hps_data |> nrow() #1953207
+
+hps_data |> filter(queer == 1) |> nrow() #209928
+
+hps_data |> filter(queer == 1) |> 
+  drop_na(anxious, worry, interest, down) |> nrow() #183292
+
+fulldata <- hps_data |> 
+  filter(queer == 1) |> 
+  drop_na(anxious, worry, interest, down, trans_gnc) |> 
+  mutate(age = year(enddate) - birth_year,
+         female = case_match(genid_birth, # sex dummy
+                             1 ~ 0,
+                             2 ~ 1),
+         coldeg = case_match(educ, # educ dummy
+                             5:7 ~ 1,
+                             1:4 ~ 0,
+                             .default = NA_integer_),
+         nhw = case_match(race_rc, # race dummy
+                          "1" ~ 1,
+                          .default = 0),
+         phq4 = anxious + worry + interest + down - 4) |> # outcome var
+  left_join(firstlawpanel, by = c("state", "time", "startdate", "enddate")) |> 
+  filter(exclude == 0)
+
+# exclude texas
+# period 1: waves 1-9
+# Jan 21, 2021 to Feb 7, 2022
+# period 2: waves 10-21
+# Mar 2, 2022 to Feb 13, 2023
+# period 3: waves 22-30
+# Mar 1, 2023 to Oct 30, 2023
+
+firstlawpanel |> 
+  ggplot(aes(y = reorder(state, desc(treatment_time)), xmax = time, fill = factor(post_period), width = 1, height = 1)) +
+  geom_rect() +
+  geom_vline(aes(xintercept = 10)) +
+  geom_vline(aes(xintercept = 22))
+
+fulldata |> 
+  filter(trans_gnc == 1) |> 
+  group_by(period, treated_state, treatment_period) |> 
+  summarize(mean_phq = weighted.mean(phq4, w = pweight, na.rm = T),
+            sd_phq = sd(phq4, na.rm = T))  
 
 # HPS data starts on July 21, 2021
 # looking at the first of each type, as well as the first overall, for a total of 4 analyses
@@ -29,11 +95,11 @@ bathroom_sample <- laws_data |>
     is.na(bathroom_date) ~ 1,
     .default = 0
   )) |> 
- filter(exclude == 0) |> 
+  filter(exclude == 0) |> 
   select(-exclude) |> 
   right_join(panelsetup) |> 
   drop_na()
-  
+
 bathroom_treatment <- bathroom_sample |> 
   filter(bathroom_date < enddate) |> 
   group_by(state) |> 
@@ -120,7 +186,7 @@ first_panel <- first_sample |>
 
 # recoding outcome / control variables in hps data
 
-hps_data <- hps_data |> 
+hps_data_rc <- hps_data |> 
   drop_na(anxious, worry, interest, down) |>
   mutate(age = year(enddate) - birth_year,
          female = case_match(genid_birth, # sex dummy for selection
@@ -134,24 +200,25 @@ hps_data <- hps_data |>
                           "1" ~ 1,
                           .default = 0),
          phq4 = anxious + worry + interest + down - 4) |> 
-  select(state, time, id, age, female, queer, trans_gnc, coldeg, race_rc, nhw, phq4, pweight, startdate, enddate)
+  select(state, time, id, age, female, queer, trans_gnc, coldeg, race_rc, nhw, phq4, pweight, startdate, enddate) |>
+  filter(time < 31)
 
 
 # merging
 
-hps_data_bathroom <- left_join(hps_data, bathroom_panel) |> 
+hps_data_bathroom <- left_join(hps_data_rc, bathroom_panel) |> 
   filter(!is.na(treatment_time)) |> 
   filter(time < 31)
 
-hps_data_sports <- left_join(hps_data, sports_panel) |> 
+hps_data_sports <- left_join(hps_data_rc, sports_panel) |> 
   filter(!is.na(treatment_time)) |> 
   filter(time < 31)
 
-hps_data_medical <- left_join(hps_data, medical_panel) |> 
+hps_data_medical <- left_join(hps_data_rc, medical_panel) |> 
   filter(!is.na(treatment_time)) |> 
   filter(time < 31)
 
-hps_data_first <- left_join(hps_data, first_panel) |> 
+hps_data_first <- left_join(hps_data_rc, first_panel) |> 
   filter(!is.na(treatment_time)) |> 
   filter(time < 31)
 
@@ -186,9 +253,8 @@ dt_medical <- hps_data_medical |>
                                     .default = 0))
 
 dt_medical |> 
-  filter(trans_gnc == 1)
-
-# 54391 observations of which 8393 were trans/gnc
+  filter(trans_gnc == 1) |> 
+  nrow()
 
 dt_first <- hps_data_first |> 
   filter(queer == 1) |> 
@@ -196,10 +262,6 @@ dt_first <- hps_data_first |>
   mutate(treatment_time = case_when(trans_gnc == 1 ~ treatment_time,
                                     .default = 0))
 
-dt_first |> 
-  filter(trans_gnc == 1)
-
-# 51607 observations of which 7949 were trans/gnc
 
 
 ##################### QUEER vs NONQUEER
@@ -207,8 +269,8 @@ dt_first |>
 dq_bathroom <- hps_data_bathroom |> 
   filter(queer %in% c(0,1)) |> 
   relocate(treatment_time, .after = "time") |> 
-mutate(treatment_time = case_when(queer == 1 ~ treatment_time,
-                                  .default = 0))
+  mutate(treatment_time = case_when(queer == 1 ~ treatment_time,
+                                    .default = 0))
 
 dq_medical <- hps_data_medical |> 
   filter(queer %in% c(0,1)) |> 
@@ -239,7 +301,81 @@ save(dq_first, dq_bathroom, dq_sports, dq_medical,
      file = here("data_clean", "datasets_queer.Rdata"))
 
 
-
 #### sample size journey
-hps_data |> 
-  drop_na(anxious, worry, interest, down)
+hps_data |> nrow()
+
+hps_data |> drop_na(c(anxious, worry, interest, down)) |> nrow()
+
+hps_data |> drop_na(c(anxious, worry, interest, down)) |>  filter(queer == 1) |> nrow()
+
+hps_data |> drop_na(c(anxious, worry, interest, down)) |>  filter(queer == 1) |> filter(trans_gnc == 1) |> nrow()
+hps_data |> drop_na(c(anxious, worry, interest, down)) |>  filter(queer == 1) |> drop_na(c(birth_year, educ)) |> nrow()
+
+samplesizes <- function(df){
+  full <- df |> nrow()
+  treated <- df |> filter(trans_gnc == 1) |> nrow()
+  states <- df |> group_by(state) |> summarize(n = n()) |> nrow()
+  return(c(full = full, treated = treated, states = states))
+}
+
+map_df(list(dt_bathroom, dt_first, dt_medical, dt_sports), samplesizes) |> 
+  mutate(analysis = c("bathroom", "first", "medical", "sports")) |> 
+  knitr::kable()
+
+
+dt_bathroom |> 
+  group_by(treatment_time, time) |> 
+  summarize(n = n()) |> 
+  ungroup() |> 
+  group_by(treatment_time == 0) |> 
+  filter(n > 4) |> 
+  summarize(mean_n = mean(n))
+
+dt_medical |> 
+  group_by(treatment_time, time) |> 
+  summarize(n = n()) |> 
+  ungroup() |> 
+  group_by(treatment_time == 0) |> 
+  filter(n > 4) |> 
+  summarize(mean_n = mean(n))
+
+dt_sports |> 
+  group_by(treatment_time, time) |> 
+  summarize(n = n()) |> 
+  ungroup() |> 
+  group_by(treatment_time == 0) |> 
+  filter(n > 4) |> 
+  summarize(mean_n = mean(n))
+
+dt_first |> 
+  group_by(treatment_time, time) |> 
+  summarize(n = n()) |> 
+  ungroup() |> 
+  group_by(treatment_time == 0) |> 
+  filter(n > 4) |> 
+  summarize(mean_n = mean(n))
+
+
+dt_bathroom |> 
+  group_by(state) |> 
+  summarize(n = n()) |> 
+  pull(state)
+
+dt_medical |> 
+  group_by(state) |> 
+  summarize(n = n()) |> 
+  pull(state) |> 
+  paste(collapse = ", ")
+
+dt_sports |> 
+  group_by(state) |> 
+  summarize(n = n()) |> 
+  pull(state) |> 
+  paste(collapse = ", ")
+
+dt_first |> 
+  group_by(state) |> 
+  summarize(n = n()) |> 
+  pull(state) |> 
+  paste(collapse = ", ")
+

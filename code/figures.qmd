@@ -1,0 +1,330 @@
+---
+title: "Anti-Trans Laws and Mental Health: Figures"
+format: html
+editor: visual
+execute: 
+  echo: false
+  warning: false
+  message: false
+---
+
+# DID Results
+
+```{r}
+#| label: loading data and packages
+library(tidyverse)
+library(here)
+library(colorspace)
+library(did)
+library(patchwork)
+library(showtext)
+
+
+###### this allows me to use the JAMA default font in my visualizations:
+showtext_auto()
+showtext_opts(dpi = 300)
+font_add(family = "guardian", "/Users/AP/Library/Fonts/GuardianSansRegular.otf")
+
+load(here("did_results", "te.Rdata"))
+load(here("did_results", "did.Rdata"))
+load(here("did_results", "te_controlled.Rdata"))
+load(here("did_results", "did_controlled.Rdata"))
+
+
+load(here("data_clean", "states_sf.rda"))
+
+```
+
+## Overall TE
+
+```{r}
+#| label: overall TE visualizations
+
+models <- list(didb_te, didb_te_controlled, 
+     dids_te, dids_te_controlled,
+     didm_te, didm_te_controlled,
+     didf_te, didf_te_controlled) |> 
+  set_names("didb_te", "didb_te_controlled", 
+     "dids_te", "dids_te_controlled",
+     "didm_te", "didm_te_controlled",
+     "didf_te", "didf_te_controlled")
+
+
+te_df <- map_df(models, ~tibble(.x$overall.att, .x$overall.se)) |> 
+  bind_cols(names(models)) |> 
+  rename(att = 1,
+         se = 2,
+         model = 3) |> 
+  mutate(controlled = if_else(str_detect(model, "controlled"),
+                              "With Covariates",
+                              "Unadjusted"),
+         controlled = fct(controlled,
+                          levels = c("With Covariates", "Unadjusted"))) |> 
+  mutate(law_type = case_when(str_detect(model, "b") ~ "Bathroom",
+                              str_detect(model, "s") ~ "Sports",
+                              str_detect(model, "m") ~ "Medical",
+                              str_detect(model, "f") ~ "First Overall"),
+         law_type = fct(law_type,
+                        levels = c("First Overall", "Sports", "Bathroom", "Medical")))
+
+
+overall_att_plot <- te_df |> 
+  ggplot(aes(y = fct_rev(controlled))) +
+    geom_vline(xintercept = 0, linetype = "dashed", linewidth = .6, alpha = .7) +
+  geom_point(aes(x = att, color = law_type,
+                 alpha = controlled)) +
+  geom_segment(aes(x = att - 1.96*se,
+                   xend = att + 1.96*se,
+                   color = law_type, alpha = controlled)) +
+  scale_alpha_manual(values = c(1,.45)) +
+  scale_color_discrete_qualitative(order = c(4,2,3,1)) +
+  facet_grid(rows = "law_type",
+             switch = "y") +
+  theme_minimal() +
+  theme(axis.text.y = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.spacing = unit(0, "pt"),
+        text = element_text(family = "guardian"),
+        legend.position = "bottom",
+        legend.box.background = element_rect(color = "black")) +
+  guides(color = "none",
+         alpha = guide_legend(title = "Model Specification")) +
+  labs(x = "Overall ATTs and 95% CIs",
+       y = "Type of Anti-Trans Law")
+
+  
+ggsave(overall_att_plot,
+       file = here("images",
+                   "overall_att_plot.png"),
+       width = 7,
+       height = 4,
+       units = "in")
+
+```
+
+## Dynamic TE
+
+```{r}
+#| label: bathroom dynamic te
+
+dteplot_b <- didb_te_controlled |> 
+  ggdid() +
+  scale_color_manual(values = c("grey50",
+                                "#00AD9A")) +
+  geom_vline(xintercept = -.5) +
+  labs(x = "Waves Since Bill Passed",
+       y = "Dynamic ATTs",
+       title = "Bathroom") +
+  theme(
+        plot.title = element_text(hjust = .5, color = "black"),
+        axis.title = element_text(color = "black"),
+        legend.position = "none",
+        text = element_text(family = "guardian", color = "black"))
+
+```
+
+```{r}
+#| label: medical dynamic te
+
+dteplot_m <- didm_te_controlled |> 
+  ggdid() +
+  scale_color_manual(values = c("grey50",
+                                "#E16A86")) +
+  geom_vline(xintercept = -.5) +
+  labs(x = "Waves Since Bill Passed",
+       y = "Dynamic ATTs",
+       title = "Medical") +
+  theme(
+        plot.title = element_text(hjust = .5, color = "black"),
+        axis.title = element_text(color = "black"),
+        legend.position = "none",
+        text = element_text(family = "guardian", color = "black"))
+
+
+
+```
+
+```{r}
+#| label: sports dynamic te
+
+dteplot_s <- dids_te_controlled |> 
+  ggdid()  +
+  scale_color_manual(values = c("grey50",
+                                "#909800")) +
+  geom_vline(xintercept = -.5) +
+  labs(x = "Waves Since Bill Passed",
+       y = "Dynamic ATTs",
+       title = "Sports") +
+  theme(
+        plot.title = element_text(hjust = .5, color = "black"),
+        axis.title = element_text(color = "black"),
+        legend.position = "none",
+        text = element_text(family = "guardian", color = "black"))
+
+```
+
+```{r}
+#| label: first overall dynamic te
+
+dteplot_f <- didf_te_controlled |> 
+  ggdid() +
+  scale_color_manual(values = c("grey50",
+                                "#9183E6")) +
+  geom_vline(xintercept = -.5) +
+  labs(x = "Waves Since Bill Passed",
+       y = "Dynamic ATTs",
+       title = "First Overall") +
+  theme(
+        plot.title = element_text(hjust = .5, color = "black"),
+        axis.title = element_text(color = "black"),
+        legend.position = "none",
+        text = element_text(family = "guardian", color = "black"))
+
+```
+
+```{r}
+#| label: combined dynamic plot
+
+
+dteplot <- dteplot_b + dteplot_m + dteplot_s + dteplot_f +
+plot_layout(axis_titles = "collect")
+
+
+ggsave(dteplot,
+       file = here("images", "dteplot.png"),
+                   width = 10,
+                   height = 6, units = "in")
+```
+
+```{r}
+#| label: cleanup
+
+remove(list = str_subset(ls(), "did|models"))
+
+
+```
+
+# Descriptives
+
+## Anti-trans laws By State
+
+```{r}
+#| label: state map
+
+first_states <- dt_first |> 
+  group_by(state) |> 
+  summarize(n = n()) |> 
+  pull(state)
+
+bathroom_states <- dt_bathroom |> 
+  group_by(state) |> 
+  summarize(n = n()) |> 
+  pull(state)
+
+sports_states <- dt_sports |> 
+  group_by(state) |> 
+  summarize(n = n()) |> 
+  pull(state)
+
+medical_states <- dt_medical |> 
+  group_by(state) |> 
+  summarize(n = n()) |> 
+  pull(state)
+
+
+mapdata <- states_sf |> 
+  mutate(bathroom = if_else(st %in% bathroom_states, 1, 0),
+         medical = if_else(st %in% medical_states, 1, 0),
+         sports = if_else(st %in% sports_states, 1, 0),
+         first = if_else(st %in% first_states, 1, 0))
+
+
+bmap <- ggplot(data = mapdata, aes(fill = as.factor(bathroom))) +
+  geom_sf() +
+  theme_void() +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = c("grey90",
+                                "#00AD9A")) +
+  theme(plot.title = element_text(family = "guardian",
+                                  hjust = .5)) +
+  labs(title = "Bathroom")
+
+
+mmap <- ggplot(data = mapdata, aes(fill = as.factor(medical))) +
+  geom_sf() +
+  theme_void() +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = c("grey90",
+                                "#E16A86")) +
+  theme(plot.title = element_text(family = "guardian",
+                                  hjust = .5)) +
+  labs(title = "Medical")
+
+fmap <- ggplot(data = mapdata, aes(fill = as.factor(first))) +
+  geom_sf() +
+  theme_void() +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = c("grey90",
+                                "#9183E6")) +
+  theme(plot.title = element_text(family = "guardian",
+                                  hjust = .5)) +
+  labs(title = "First Overall")
+
+smap <- ggplot(data = mapdata, aes(fill = as.factor(sports))) +
+  geom_sf() +
+  theme_void() +
+  theme(legend.position = "none") +
+  scale_fill_manual(values = c("grey90",
+                                "#909800")) +
+  theme(plot.title = element_text(family = "guardian",
+                                  hjust = .5)) +
+  labs(title = "Sports")
+
+
+lawsmap <- bmap + mmap + smap + fmap
+
+
+ggsave(lawsmap,
+       file = here("images",
+                   "lawsmap.png"),
+       width = 8, height = 8,
+       unit = "in")
+```
+
+## PHQ-4
+
+```{r}
+#| label: phq4 visualization
+
+load(here("data_clean", "hps_data.Rdata"))
+
+phq4plot <- hps_data |> 
+  mutate(phq4 = anxious + worry + interest + down - 4) |> 
+  select(startdate, phq4, trans_gnc, queer, pweight) |>
+  drop_na(trans_gnc, queer, phq4) |> 
+  mutate(group = case_when(queer == 0 & trans_gnc == 0 ~ "Cisgender Heterosexual",
+                           queer == 1 & trans_gnc == 0 ~ "Cisgender Queer",
+                           trans_gnc == 1 ~ "Trans/Gender Non-Conforming")) |> 
+  group_by(startdate, group) |> 
+  summarize(mean_phq = weighted.mean(phq4, w = pweight)) |> 
+  ggplot(aes(x = startdate, y = mean_phq, group = group, color = group)) +
+  geom_line() +
+  labs(x = "Date",
+       y = "Average PHQ-4 Score",
+       color = "") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        text = element_text(family = "guardian"),
+        legend.background = element_rect(color = "black")) +
+  scale_color_manual(values = c("tomato", "royalblue", "purple4")) +
+  scale_x_datetime(date_labels = "%B %Y")
+
+ggsave(phq4plot, file = here("images",
+                             "phq4plot.png"),
+       width = 7, height = 4,
+       units = "in")
+```
+
+# Supplemental
+
+## eFigure 1. panel setup

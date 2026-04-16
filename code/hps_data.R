@@ -126,6 +126,7 @@ datalist <- map(.x = here("csvfiles", dir(here("csvfiles"))),
                         "GENID_DESCRIBE",
                         "SEXUAL_ORIENTATION",
                         "EEDUC",
+                        "INCOME",
                         "ANXIOUS",
                         "WORRY",
                         "INTEREST",
@@ -242,6 +243,8 @@ dates_table <- dates |>
          everything())
 
 write_excel_csv(dates_table, file = here("data_clean", "dates_table.csv"))
+
+
 ############################## Step 5: Data Cleaning
 # most of the recoding is making sure missing values are consistent
 
@@ -259,12 +262,23 @@ data_rc <- data_raw |>
          genid_describe,
          sexual_orientation,
          educ = eeduc,
+         income,
          anxious, worry, interest, down,
          pweight) |> 
   mutate(across(c(birth_year:down), ~case_match(.x,
                                         -99 ~ NA_integer_,
                                         -88 ~ NA_integer_,
                                         .default = .x)),
+         income_rc = case_match(income,
+                                1 ~ 0,
+                                2 ~ 25000,
+                                3 ~ 35000,
+                                4 ~ 50000,
+                                5 ~ 75000,
+                                6 ~ 100000,
+                                7 ~ 150000,
+                                8 ~ 200000,
+                                .default = NA_integer_),
          race_rc = as.factor(case_when(hispanic == 1 & race == 1 ~ 1, #NHW
                                        hispanic == 1 & race == 2 ~ 2, #NHB
                                        hispanic == 1 & race == 3 ~ 3, #NHO
@@ -290,6 +304,10 @@ data_rc <- data_raw |>
                            is.na(trans_gnc) & is.na(lgbq) ~ NA_integer_,
                            .default = 0))
 
+dates <- read_csv(here("data_clean", "dates_table.csv")) |> 
+  clean_names() |> 
+  select(wave, startdate = start_date, enddate = end_date)
+
 ### adding in state abbreviations instead of just fips codes
 hps_data <- tibble(tidycensus::fips_codes) |> 
   select(state, state_code) |> 
@@ -297,9 +315,7 @@ hps_data <- tibble(tidycensus::fips_codes) |>
   right_join(data_rc) |> 
 #adding dates, creating "time" variable (true order of waves)
   left_join(dates) |> 
-  mutate(time = case_match(wave,
-                           34:63 ~ wave - 33,
-                           1:9 ~ wave + 30))
+  mutate(time = wave - 33)
 
 #### congrats! you now have all of the Household Pulse Survey data
 

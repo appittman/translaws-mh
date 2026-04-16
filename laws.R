@@ -142,3 +142,5 @@ laws_data <- tibble(state = state.abb, state_name = state.name) |>
 
 save(laws_data, file = here("data_clean", "first_laws.Rdata"))
 save(laws, file = here("data_clean", "all_laws.Rdata"))
+
+load(here("data_clean", "all_laws.Rdata"))

@@ -1,6 +1,8 @@
 ---
 title: "Anti-Trans Laws and Mental Health: Visualizations"
-format: html
+format:
+  pdf:
+    mainfont: "/Users/ameliapittman/Documents/Electra LT Std Regular.otf"
 editor: visual
 ---
 
