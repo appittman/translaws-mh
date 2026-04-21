@@ -84,22 +84,4 @@ coeffs <- map(list(medical = medical_models,
          first = first_models),
     get_coeffs)
 
-
-################ Relative size of agg. post ATT vs. avg. pre ATTs
-
-coeffs$sports |> 
-  filter(t < -1) |> 
-  group_by(modelspec) |> 
-  summarize(overall_att = mean(overall_att),
-            avg_pre = mean(abs(att))) |> 
-  mutate(ratio = overall_att / avg_pre)
-
-coeffs$first |> 
-  filter(t < -1) |> 
-  group_by(modelspec) |> 
-  summarize(overall_att = mean(overall_att),
-            avg_pre = mean(abs(att))) |> 
-  mutate(ratio = overall_att / avg_pre)
-
-
 save(coeffs, file = here("did_results", "coeffs.Rdata"))

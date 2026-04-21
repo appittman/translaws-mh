@@ -1,0 +1,194 @@
+---
+title: "Anti-Trans Laws and Mental Health: Tables and Figures"
+format: html
+editor: visual
+execute: 
+  echo: false
+  warning: false
+  message: false
+---
+
+# setup
+
+```{r}
+#| label: loading in data and packages
+
+library(tidyverse)
+library(here)
+library(did)
+library(patchwork)
+load(here("data_clean", "datasets.Rdata"))
+load(here("did_results", "coeffs.Rdata"))
+load(here("data_clean", "states_sf.rda"))
+load(here("data_clean", "all_laws.Rdata"))
+
+```
+
+```{r}
+#| label: data wrangling
+
+# making some relevant variables
+df_queer <- map(df_queer, ~drop_na(.x,
+                                   anxious, worry, interest, down) |> 
+                  mutate(phq4 = anxious + worry + interest + down - 4, #HPS codes these from 1-4; we need them added as though they are 0-3
+                          group = case_when(trans_gnc == 1 ~ treatment_period,
+                                              trans_gnc == 0 ~ 0), #`did` package convention: comparison group's group is 0
+                         coldeg = case_match(educ, 
+                                             c(1:4) ~ 0,
+                                             c(5:7) ~ 1,
+                                             .default = NA_integer_),
+                         nhw = case_match(as.numeric(race_rc),
+                                          1 ~ 1,
+                                          c(2:4) ~ 0,
+                                          .default = NA_integer_),
+                         age = year(startdate) - birth_year))
+
+#using the same process on the trans datasets, for later
+df_trans <- map(df_trans, ~drop_na(.x,
+                                   anxious, worry, interest, down) |> 
+                  mutate(phq4 = anxious + worry + interest + down - 4,
+                         group = case_when(state_type == "treated" ~ treatment_period,
+                                           state_type == "notyettreated" ~ 0),
+                         coldeg = case_match(educ, 
+                                             c(1:4) ~ 0,
+                                             c(5:7) ~ 1,
+                                             .default = NA_integer_),
+                         nhw = case_match(as.numeric(race_rc),
+                                          1 ~ 1,
+                                          c(2:4) ~ 0,
+                                          .default = NA_integer_),
+                         age = year(startdate) - birth_year))
+
+```
+
+# Main Results
+
+## Table 1. Sample Characteristics
+
+```{r}
+#| label: sample characteristics
+# the queer comparison is the main result; making trans vs. trans a supportive supplemental argument
+
+sc <- map(df_queer, ~group_by(.x, trans_gnc, post_period) |> 
+  summarize(n = n(),
+            mean_phq4 = weighted.mean(phq4, w = pweight),
+            sd_phq4 = sd(phq4),
+            mean_age = weighted.mean(age, w = pweight),
+            sd_age = sd(age),
+            prop_nhw = weighted.mean(nhw, w = pweight),
+            prop_coldeg = weighted.mean(coldeg, w = pweight),
+            prop_fatbirth = weighted.mean(genid_birth - 1, w = pweight)) |> 
+  ungroup())
+  
+sc <- sc |> 
+  tibble() |> 
+  mutate(analysis = names(sc)) |> 
+  unnest(sc) |> 
+  pivot_longer(cols = c(n:prop_fatbirth),
+               names_to = "stat",
+               values_to = "value") |> 
+  mutate(trans_gnc = case_match(trans_gnc,
+                                0 ~ "queer",
+                                1 ~ "trans"),
+         post_period = case_match(post_period,
+                                  0 ~ "pre",
+                                  1 ~ "post")) |> 
+  pivot_wider(id_cols = stat,
+              names_from = c(trans_gnc, post_period, analysis),
+              values_from = value,
+              names_sep = "_")
+
+write_csv(sc, file = here("tables_figs", "desctable.csv"))
+```
+
+## Figure 1. States Visualization
+
+```{r}
+analysis_states <- df_queer |> map(~group_by(.x, state) |> 
+  summarize(n = n()) |> 
+  pull(state))
+
+mapdata <- states_sf |> 
+  mutate(first = st %in% analysis_states$first,
+         bathroom = st %in% analysis_states$bathroom,
+         medical = st %in% analysis_states$medical,
+         sports = st %in% analysis_states$sports)
+
+ hcl.colors(4, palette = "Pastel 1")
+ # "#FFC5D0" "#D4D8A7" "#99E2D8" "#D5D0FC"
+
+map_b <- ggplot(data = mapdata) +
+  geom_sf(aes(fill = bathroom)) +
+  scale_fill_manual(values = c("grey95", "#99E2D8")) +
+  theme_void() +
+  labs(title = "First Bathroom Law") +
+  theme(legend.position = "none", plot.title = element_text(hjust = 0.5))
+
+map_m <- ggplot(data = mapdata) +
+  geom_sf(aes(fill = medical)) +
+  scale_fill_manual(values = c("grey95", "#FFC5D0")) +
+  theme_void() +
+  labs(title = "First Medical Law") +
+  theme(legend.position = "none", plot.title = element_text(hjust = 0.5))
+
+map_s <- ggplot(data = mapdata) +
+  geom_sf(aes(fill = sports)) +
+  scale_fill_manual(values = c("grey95", "#D4D8A7")) +
+  theme_void() +
+  labs(title = "First Sports Law") +
+  theme(legend.position = "none", plot.title = element_text(hjust = 0.5))
+
+map_f <- ggplot(data = mapdata) +
+  geom_sf(aes(fill = first)) +
+  scale_fill_manual(values = c("grey95", "#D5D0FC")) +
+  theme_void() +
+  labs(title = "First Law Overall") +
+  theme(legend.position = "none", plot.title = element_text(hjust = 0.5))
+
+
+map_b + map_m + map_s + map_f + plot_layout(nrow = 2)
+
+
+```
+
+## Figure 2. PHQ-4 Trends Visualization
+
+```{r}
+
+```
+
+## Figure 3. DID Results
+
+# Supplemental
+
+## eTable 1. Post-Treatment ATTs vs Pre-Treatment ATTs
+
+```{r}
+#| label: post vs. pre ratios
+coeffs$sports |> 
+  filter(t < -1) |> 
+  group_by(modelspec) |> 
+  summarize(overall_att = mean(overall_att),
+            avg_pre = mean(abs(att))) |> 
+  mutate(ratio = overall_att / avg_pre)
+
+coeffs$first |> 
+  filter(t < -1) |> 
+  group_by(modelspec) |> 
+  summarize(overall_att = mean(overall_att),
+            avg_pre = mean(abs(att))) |> 
+  mutate(ratio = overall_att / avg_pre)
+
+```
+
+## eTable 2. Sample Construction Process
+
+constructed in Word
+
+## eTable 3. Sample Comparisons
+
+## eTable 4. Alternate Specifications
+
+## eTable 5. Sample Characteristics: Trans Sample
+
+## eFigure 1. Panel Structure of Data
