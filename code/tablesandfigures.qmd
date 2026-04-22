@@ -17,10 +17,12 @@ library(tidyverse)
 library(here)
 library(did)
 library(patchwork)
+
 load(here("data_clean", "datasets.Rdata"))
 load(here("did_results", "coeffs.Rdata"))
 load(here("data_clean", "states_sf.rda"))
 load(here("data_clean", "all_laws.Rdata"))
+load(here("data_clean", "hps_data.Rdata"))
 
 ```
 
@@ -154,10 +156,126 @@ map_b + map_m + map_s + map_f + plot_layout(nrow = 2)
 ## Figure 2. PHQ-4 Trends Visualization
 
 ```{r}
+#| label: phq-4 visualization
 
+# getting a list of states included in any analysis
+states_inany <- tibble(analysis_states) |> 
+  unnest_longer(analysis_states) |> 
+  unique() |> 
+  pull(analysis_states)
+
+# making the picture
+phq4_plot <- hps_data |> 
+  filter(state %in% states_inany) |> 
+  drop_na(queer, trans_gnc) |> 
+  mutate(phq4 = anxious + worry + interest + down - 4,
+         group = fct(case_when(queer == 0 & trans_gnc == 0 ~ "Cisheterosexual",
+                           queer == 1 & trans_gnc == 0 ~ "Cis LGBQ+",
+                           queer == 1 & trans_gnc == 1 ~ "Trans/GNC"), levels = c("Trans/GNC", "Cis LGBQ+",                                                           "Cisheterosexual"))) |> 
+  group_by(startdate, group) |> 
+  summarize(mean_phq = weighted.mean(phq4, w = pweight, na.rm = T)) |> 
+  ggplot(aes(x = startdate, y = mean_phq)) +
+  geom_line(aes(group = group, color = group)) +
+  scale_color_manual(values = hcl.colors(3, palette = "SunsetDark")) +
+  scale_x_date(date_labels = "%b %Y") +
+  theme_minimal() +
+  theme(panel.grid.minor.y = element_blank(),
+        panel.grid.major.y = element_blank()) +
+  labs(x = "Date",
+       y = "Survey-Weighted Average PHQ-4 Score",
+       color = "Group")
+  
+# saving
+ggsave(filename = 
+         here("tables_figs", "phq4plot.png"),
+       plot = phq4_plot,
+       dpi = 300,
+       width = 6,
+       height = 5,
+       units = "in")
 ```
 
-## Figure 3. DID Results
+## Figure 3. DID Results, Overall
+
+```{r}
+
+hcl.colors(4, palette = "Set 2")
+# "#00C1B2" "#ACA2EC""#ED90A4" "#ABB150"
+
+overall_did_plot <- coeffs |>
+  map(~select(.x, modelspec, overall_att, overall_se) |> 
+  unique() |> 
+  filter(str_detect(modelspec, "queer"))) |> 
+  tibble() |> 
+  mutate(law = names(coeffs)) |> 
+  unnest(1) |> 
+  mutate(modelspec = fct(case_match(modelspec,
+                                "queer" ~ "Unadjusted",
+                                "queer_nsg" ~ "Removing Small Groups",
+                                "queer_cov" ~ "Removing Small Groups,\nAdding Covariates"),
+                         levels = c("Removing Small Groups,\nAdding Covariates",
+                                    "Removing Small Groups",
+                                    "Unadjusted")),
+         law = factor(law, levels = c("bathroom", "medical", "sports", "first"), labels = c("First Bathroom Law", "First Medical Care Law", "First Sports Law", "First Law Overall"))) |> 
+  ggplot(aes(y = modelspec, color = law)) +
+  geom_point(aes(x = overall_att)) +
+  geom_segment(aes(x = overall_att + 1.96*overall_se, xend = overall_att - 1.96*overall_se)) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  facet_wrap("law") +
+  scale_color_manual(values = c("#00C1B2","#ED90A4","#ABB150", "#ACA2EC")) +
+  theme_minimal() +
+  theme(legend.position = "none",
+        panel.background = element_rect(color = "black")) +
+  labs(x = "Overall ATT",
+       y = "Model Specifications")
+
+ggsave(filename = here("tables_figs",
+                       "overall_did_plot.png"),
+       plot = overall_did_plot,
+       dpi = 300,
+       width = 7,
+       height = 4.5,
+       units = "in")
+```
+
+## Figure 4: Dynamic ATTs
+
+```{r}
+dynamic_did_plot <- coeffs |>
+  map(~select(.x, modelspec, t, att, se)) |> 
+  tibble() |> 
+  mutate(law = names(coeffs)) |> 
+  unnest(1) |> 
+  filter(modelspec == "queer_cov",
+         t < 8,
+         t > -9,
+         law %in% c("sports", "first")) |> 
+  mutate(law = factor(law, levels = c("sports", "first"), labels = c("First Sports Law", "First Law Overall")),
+         pre_period = t < -1) |> 
+  ggplot(aes(x = t, color = law,
+             alpha = pre_period)) +
+  geom_point(aes(y = att)) +
+  geom_segment(aes(y = att + 1.96*se, yend = att - 1.96*se)) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = -1) +
+  facet_wrap("law") +
+  scale_color_manual(values = c("#ABB150", "#ACA2EC")) +
+  theme_minimal() +
+  scale_alpha_manual(values = c(1, .5)) +
+  theme(legend.position = "none",
+        panel.background = element_rect(color = "black")) +
+  labs(x = "Waves Since Treatment",
+       y = "Dynamic ATTs")
+
+ggsave(filename = here("tables_figs",
+                       "dynamic_did_plot.png"),
+       plot = dynamic_did_plot,
+       dpi = 300,
+       width = 7,
+       height = 4.5,
+       units = "in")
+
+```
 
 # Supplemental
 

@@ -46,7 +46,13 @@ all_laws <- all_laws |>
 
 save(all_laws, file = here("data_clean", "all_laws.Rdata"))
 
+#### what types of laws are typically the first to pass in a state?
 all_laws |> 
-  group_by(state) |> 
-  slice_min(date) |> 
-  arrange(desc(date))
+  group_by(state) |>
+  slice_min(date, with_ties = F) |> 
+  filter(date > mdy("July 21 2021"),
+    date < mdy("Oct 16 2023")) |> 
+  group_by(type) |> 
+  summarize(n = n())
+
+
