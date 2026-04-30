@@ -1,6 +1,6 @@
 ---
 title: "Anti-Trans Laws and Mental Health: Tables and Figures"
-format: html
+format: pdf
 editor: visual
 execute: 
   echo: false
@@ -8,15 +8,14 @@ execute:
   message: false
 ---
 
-# setup
-
 ```{r}
-#| label: loading in data and packages
+#| label: setup - loading in data and packages
 
 library(tidyverse)
 library(here)
 library(did)
 library(patchwork)
+library(sf)
 
 load(here("data_clean", "datasets.Rdata"))
 load(here("did_results", "coeffs.Rdata"))
@@ -26,52 +25,17 @@ load(here("data_clean", "hps_data.Rdata"))
 
 ```
 
-```{r}
-#| label: data wrangling
-
-# making some relevant variables
-df_queer <- map(df_queer, ~drop_na(.x,
-                                   anxious, worry, interest, down) |> 
-                  mutate(phq4 = anxious + worry + interest + down - 4, #HPS codes these from 1-4; we need them added as though they are 0-3
-                          group = case_when(trans_gnc == 1 ~ treatment_period,
-                                              trans_gnc == 0 ~ 0), #`did` package convention: comparison group's group is 0
-                         coldeg = case_match(educ, 
-                                             c(1:4) ~ 0,
-                                             c(5:7) ~ 1,
-                                             .default = NA_integer_),
-                         nhw = case_match(as.numeric(race_rc),
-                                          1 ~ 1,
-                                          c(2:4) ~ 0,
-                                          .default = NA_integer_),
-                         age = year(startdate) - birth_year))
-
-#using the same process on the trans datasets, for later
-df_trans <- map(df_trans, ~drop_na(.x,
-                                   anxious, worry, interest, down) |> 
-                  mutate(phq4 = anxious + worry + interest + down - 4,
-                         group = case_when(state_type == "treated" ~ treatment_period,
-                                           state_type == "notyettreated" ~ 0),
-                         coldeg = case_match(educ, 
-                                             c(1:4) ~ 0,
-                                             c(5:7) ~ 1,
-                                             .default = NA_integer_),
-                         nhw = case_match(as.numeric(race_rc),
-                                          1 ~ 1,
-                                          c(2:4) ~ 0,
-                                          .default = NA_integer_),
-                         age = year(startdate) - birth_year))
-
-```
-
 # Main Results
 
 ## Table 1. Sample Characteristics
 
 ```{r}
 #| label: sample characteristics
-# the queer comparison is the main result; making trans vs. trans a supportive supplemental argument
+# main results are the first laws, queer comparison group, fully cont.
 
-sc <- map(df_queer, ~group_by(.x, trans_gnc, post_period) |> 
+
+scq <- df_queer$first |> 
+  group_by(trans_gnc) |> 
   summarize(n = n(),
             mean_phq4 = weighted.mean(phq4, w = pweight),
             sd_phq4 = sd(phq4),
@@ -80,77 +44,94 @@ sc <- map(df_queer, ~group_by(.x, trans_gnc, post_period) |>
             prop_nhw = weighted.mean(nhw, w = pweight),
             prop_coldeg = weighted.mean(coldeg, w = pweight),
             prop_fatbirth = weighted.mean(genid_birth - 1, w = pweight)) |> 
-  ungroup())
-  
-sc <- sc |> 
-  tibble() |> 
-  mutate(analysis = names(sc)) |> 
-  unnest(sc) |> 
-  pivot_longer(cols = c(n:prop_fatbirth),
+  mutate(group = case_match(trans_gnc,
+                            1 ~ "Treatment Group",
+                            0 ~ "Queer Reference Group")) |> 
+  select(group, n:prop_fatbirth)
+
+sct <- df_trans$first |> 
+  group_by(state_type) |> 
+  summarize(n = n(),
+            mean_phq4 = weighted.mean(phq4, w = pweight),
+            sd_phq4 = sd(phq4),
+            mean_age = weighted.mean(age, w = pweight),
+            sd_age = sd(age),
+            prop_nhw = weighted.mean(nhw, w = pweight),
+            prop_coldeg = weighted.mean(coldeg, w = pweight),
+            prop_fatbirth = weighted.mean(genid_birth - 1, w = pweight)) |> 
+  filter(state_type == "notyettreated") |> 
+  mutate(group = case_match(state_type,
+                            "notyettreated" ~ "Trans Reference Group")) |> 
+  select(group, n:prop_fatbirth)
+
+sc <- bind_rows(scq, sct) |> 
+  mutate(phq4 = paste0(round(mean_phq4, digits = 2), " (", round(sd_phq4, digits = 2), ")"),
+         age = paste0(round(mean_age, digits = 2), " (", round(sd_age, digits = 2), ")")) |>
+  select(group, n, phq4, age, starts_with("prop")) |>
+  mutate(across(starts_with("prop"), ~round(.x, digits = 3)),
+         n = as.integer(n)) |> 
+  rename("PHQ-4 Mean (SD)" = phq4,
+         "Age Mean (SD)" = age,
+         "Proportion non-Hispanic White" = prop_nhw,
+         "Proportion with a College Degree" = prop_coldeg,
+         "Proportion Assigned Female at Birth" = prop_fatbirth) |> 
+  mutate(across(everything(), as.character)) |> 
+  pivot_longer(cols = !group,
                names_to = "stat",
                values_to = "value") |> 
-  mutate(trans_gnc = case_match(trans_gnc,
-                                0 ~ "queer",
-                                1 ~ "trans"),
-         post_period = case_match(post_period,
-                                  0 ~ "pre",
-                                  1 ~ "post")) |> 
   pivot_wider(id_cols = stat,
-              names_from = c(trans_gnc, post_period, analysis),
-              values_from = value,
-              names_sep = "_")
+              names_from = group,
+              values_from = value) |> 
+  rename("Statistic" = stat) |> 
+  select("Statistic", "Treatment Group",
+         "Queer Reference Group", "Trans Reference Group")
 
 write_csv(sc, file = here("tables_figs", "desctable.csv"))
+
+
+knitr::kable(sc)
 ```
 
 ## Figure 1. States Visualization
 
 ```{r}
-analysis_states <- df_queer |> map(~group_by(.x, state) |> 
-  summarize(n = n()) |> 
-  pull(state))
+#| label: map visualization
+analysis_states <- all_laws |> 
+  select(state, date) |> 
+  group_by(state) |> 
+  slice_min(date, with_ties = F) |> 
+  arrange(date) |> 
+  ungroup() |> 
+  right_join(tibble(state = state.abb)) |> 
+  mutate(period = case_when(is.na(date) ~ "never",
+                          date < mdy("July 21, 2021") ~ "before",
+                          date >= mdy("July 21, 2021") &
+                            date <= mdy("October 30, 2023") ~ "during",
+                          date > mdy("October 30, 2023") ~ "after"
+                            )) |> 
+  select(state, period)
 
 mapdata <- states_sf |> 
-  mutate(first = st %in% analysis_states$first,
-         bathroom = st %in% analysis_states$bathroom,
-         medical = st %in% analysis_states$medical,
-         sports = st %in% analysis_states$sports)
+  left_join(analysis_states, by = c("st" = "state")) |> drop_na(period)
 
- hcl.colors(4, palette = "Pastel 1")
- # "#FFC5D0" "#D4D8A7" "#99E2D8" "#D5D0FC"
-
-map_b <- ggplot(data = mapdata) +
-  geom_sf(aes(fill = bathroom)) +
-  scale_fill_manual(values = c("grey95", "#99E2D8")) +
+map <- ggplot(data = mapdata) +
+  geom_sf(aes(fill = period)) +
+  scale_fill_manual(values = hcl.colors(4, palette = "Pastel 1"),
+                    labels = c("After Study Period", "Before Study Period", "During Study Period", "Never (as of 4-5-2026)")) +
   theme_void() +
-  labs(title = "First Bathroom Law") +
-  theme(legend.position = "none", plot.title = element_text(hjust = 0.5))
-
-map_m <- ggplot(data = mapdata) +
-  geom_sf(aes(fill = medical)) +
-  scale_fill_manual(values = c("grey95", "#FFC5D0")) +
-  theme_void() +
-  labs(title = "First Medical Law") +
-  theme(legend.position = "none", plot.title = element_text(hjust = 0.5))
-
-map_s <- ggplot(data = mapdata) +
-  geom_sf(aes(fill = sports)) +
-  scale_fill_manual(values = c("grey95", "#D4D8A7")) +
-  theme_void() +
-  labs(title = "First Sports Law") +
-  theme(legend.position = "none", plot.title = element_text(hjust = 0.5))
-
-map_f <- ggplot(data = mapdata) +
-  geom_sf(aes(fill = first)) +
-  scale_fill_manual(values = c("grey95", "#D5D0FC")) +
-  theme_void() +
-  labs(title = "First Law Overall") +
-  theme(legend.position = "none", plot.title = element_text(hjust = 0.5))
+  labs(fill = "First anti-trans law passed...") +
+  theme(legend.position = "bottom", legend.direction = "vertical",
+        legend.title.position = "left", legend.key.size = unit(1.2, "char"))
 
 
-map_b + map_m + map_s + map_f + plot_layout(nrow = 2)
+ggsave(plot = map,
+       filename = here("tables_figs", "lawsmap.png"),
+       dpi = 300,
+       height = 7,
+       width = 8,
+       units = "in")
 
-
+map
 ```
 
 ## Figure 2. PHQ-4 Trends Visualization
@@ -158,15 +139,14 @@ map_b + map_m + map_s + map_f + plot_layout(nrow = 2)
 ```{r}
 #| label: phq-4 visualization
 
-# getting a list of states included in any analysis
-states_inany <- tibble(analysis_states) |> 
-  unnest_longer(analysis_states) |> 
-  unique() |> 
-  pull(analysis_states)
+# getting a list of states included in the analysis
+include_states <- analysis_states |> 
+  filter(period == "during") |> 
+  pull(state)
 
 # making the picture
 phq4_plot <- hps_data |> 
-  filter(state %in% states_inany) |> 
+  filter(state %in% include_states) |> 
   drop_na(queer, trans_gnc) |> 
   mutate(phq4 = anxious + worry + interest + down - 4,
          group = fct(case_when(queer == 0 & trans_gnc == 0 ~ "Cisheterosexual",
@@ -193,79 +173,61 @@ ggsave(filename =
        width = 6,
        height = 5,
        units = "in")
+
+phq4_plot
 ```
 
 ## Figure 3. DID Results, Overall
 
 ```{r}
+mainresults <- coeffs$first |> 
+  filter(str_detect(modelspec, "nsg_cov")) |> 
+  mutate(comparison_g = case_when(
+           str_detect(modelspec, "queer") ~ "Cis LGBQ+ People in\nTreated States",
+           str_detect(modelspec, "trans") ~ "Trans People in\nNot-Yet-Treated States"))
 
-hcl.colors(4, palette = "Set 2")
-# "#00C1B2" "#ACA2EC""#ED90A4" "#ABB150"
-
-overall_did_plot <- coeffs |>
-  map(~select(.x, modelspec, overall_att, overall_se) |> 
-  unique() |> 
-  filter(str_detect(modelspec, "queer"))) |> 
-  tibble() |> 
-  mutate(law = names(coeffs)) |> 
-  unnest(1) |> 
-  mutate(modelspec = fct(case_match(modelspec,
-                                "queer" ~ "Unadjusted",
-                                "queer_nsg" ~ "Removing Small Groups",
-                                "queer_cov" ~ "Removing Small Groups,\nAdding Covariates"),
-                         levels = c("Removing Small Groups,\nAdding Covariates",
-                                    "Removing Small Groups",
-                                    "Unadjusted")),
-         law = factor(law, levels = c("bathroom", "medical", "sports", "first"), labels = c("First Bathroom Law", "First Medical Care Law", "First Sports Law", "First Law Overall"))) |> 
-  ggplot(aes(y = modelspec, color = law)) +
+overall_did_plot <- mainresults |> 
+  ggplot(aes(y = comparison_g)) +
   geom_point(aes(x = overall_att)) +
   geom_segment(aes(x = overall_att + 1.96*overall_se, xend = overall_att - 1.96*overall_se)) +
   geom_vline(xintercept = 0, linetype = "dashed") +
-  facet_wrap("law") +
-  scale_color_manual(values = c("#00C1B2","#ED90A4","#ABB150", "#ACA2EC")) +
   theme_minimal() +
-  theme(legend.position = "none",
-        panel.background = element_rect(color = "black")) +
-  labs(x = "Overall ATT",
-       y = "Model Specifications")
+  labs(x = "Overall ATT (points on the PHQ-4)",
+       y = "Difference-in-Differences\nComparison Group")
 
 ggsave(filename = here("tables_figs",
                        "overall_did_plot.png"),
        plot = overall_did_plot,
        dpi = 300,
-       width = 7,
-       height = 4.5,
+       width = 6,
+       height = 3,
        units = "in")
+
+overall_did_plot
 ```
 
 ## Figure 4: Dynamic ATTs
 
 ```{r}
-dynamic_did_plot <- coeffs |>
-  map(~select(.x, modelspec, t, att, se)) |> 
-  tibble() |> 
-  mutate(law = names(coeffs)) |> 
-  unnest(1) |> 
-  filter(modelspec == "queer_cov",
-         t < 8,
-         t > -9,
-         law %in% c("sports", "first")) |> 
-  mutate(law = factor(law, levels = c("sports", "first"), labels = c("First Sports Law", "First Law Overall")),
-         pre_period = t < -1) |> 
-  ggplot(aes(x = t, color = law,
+dynamic_did_plot <- mainresults |> 
+  mutate(pre_period = t < -1) |> 
+  ggplot(aes(x = t, color = comparison_g,
              alpha = pre_period)) +
   geom_point(aes(y = att)) +
   geom_segment(aes(y = att + 1.96*se, yend = att - 1.96*se)) +
   geom_hline(yintercept = 0, linetype = "dashed") +
   geom_vline(xintercept = -1) +
-  facet_wrap("law") +
+  facet_wrap("comparison_g") +
   scale_color_manual(values = c("#ABB150", "#ACA2EC")) +
   theme_minimal() +
   scale_alpha_manual(values = c(1, .5)) +
-  theme(legend.position = "none",
-        panel.background = element_rect(color = "black")) +
   labs(x = "Waves Since Treatment",
-       y = "Dynamic ATTs")
+       y = "Dynamic ATTs (points on the PHQ-4)",
+       title = "Comparison Group") +
+  theme(legend.position = "none",
+        panel.background = element_rect(color = "black"),
+        plot.title = element_text(hjust = .5,
+                                  size = 12))
 
 ggsave(filename = here("tables_figs",
                        "dynamic_did_plot.png"),
@@ -275,28 +237,31 @@ ggsave(filename = here("tables_figs",
        height = 4.5,
        units = "in")
 
+dynamic_did_plot
 ```
 
-# Supplemental
+# Supplemental Material
 
 ## eTable 1. Post-Treatment ATTs vs Pre-Treatment ATTs
 
 ```{r}
 #| label: post vs. pre ratios
-coeffs$sports |> 
+ratios <- coeffs$first |> 
+  filter(str_detect(modelspec, "nsg_cov")) |> 
   filter(t < -1) |> 
   group_by(modelspec) |> 
   summarize(overall_att = mean(overall_att),
-            avg_pre = mean(abs(att))) |> 
-  mutate(ratio = overall_att / avg_pre)
+            avg_pretrend = mean(abs(att))) |> 
+  mutate(ratio = overall_att / avg_pretrend,
+         modelspec = case_match(modelspec,
+                                "queer_nsg_cov" ~ "Cis LGBQ+ Residents of Treated States",
+                                "trans_nsg_cov" ~ "Trans Residents of Not-Yet-Treated States")) |> 
+  rename("Comparison Group" = modelspec,
+         "Overall ATT" = overall_att,
+         "Average Pre-Period ATT Magnitude" = avg_pretrend,
+         "Ratio" = ratio)
 
-coeffs$first |> 
-  filter(t < -1) |> 
-  group_by(modelspec) |> 
-  summarize(overall_att = mean(overall_att),
-            avg_pre = mean(abs(att))) |> 
-  mutate(ratio = overall_att / avg_pre)
-
+knitr::kable(ratios, digits = 3)
 ```
 
 ## eTable 2. Sample Construction Process

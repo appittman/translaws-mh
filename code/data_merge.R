@@ -7,31 +7,42 @@ load(here("data_clean", "hps_data.Rdata"))
 ## panel setup
 panelsetup <- hps_data |> 
   count(state, time, startdate, enddate) |> 
-  select(-n)
+  select(state, time, startdate, enddate)
 
-## first of each type, and first overall
+## first overall
 first_laws <- all_laws |> 
   group_by(state) |> 
   slice_min(date, with_ties = F) |> 
-  rename(lawdate = date)
+  rename(lawdate = date) |> 
+  ungroup()
 
-sports_laws <- all_laws |> 
-  filter(type == "sports") |> 
+#splitting up by type
+first_laws_bytype <- all_laws |> 
   group_by(state) |> 
-  slice_min(date, with_ties = F) |> 
-  rename(lawdate = date)
+  slice_min(date, with_ties = T) |> 
+  ungroup() |> 
+  nest(.by = "type")
 
-bathroom_laws <- all_laws |> 
-  filter(type == "bathroom") |> 
-  group_by(state) |> 
-  slice_min(date, with_ties = F) |> 
-  rename(lawdate = date)
+types <- first_laws_bytype |> 
+  pull(type)
 
-medical_laws <- all_laws |> 
-  filter(type == "medical") |> 
-  group_by(state) |> 
-  slice_min(date, with_ties = F) |> 
-  rename(lawdate = date)
+laws <- first_laws_bytype |> 
+  pull(data) |> 
+  set_names(types) |> 
+  map(~rename(.x, lawdate = date)) |> 
+  (\(x) c(x, list("first" = first_laws)))()
+
+#there's only 2 states whose first anti-trans law was a bathroom bill; not enough to make a meaningful analysis. 
+
+laws$bathroom <- NULL
+
+laws$medical$state
+laws$sports$state
+
+laws
+
+# NH is a special case: on the same day, they passed a medical law and a sports law. will need to perform subsequent analyses without NH in either group.
+
 
 ## joining with panel setup
 ## if a law passed within seven days of a survey wave starting, that wave is "treated"
@@ -59,12 +70,8 @@ build_panel <- function(laws, panelsetup) {
     ungroup()
 }
 
-laws_list <- list(first = first_laws,
-                  bathroom = bathroom_laws,
-                  sports = sports_laws,
-                  medical = medical_laws)
 
-panels <- map(laws_list, ~build_panel(.x, panelsetup = panelsetup))
+panels <- map(laws, ~build_panel(.x, panelsetup = panelsetup))
 
 ## narrowing down hps data for quicker/cleaner merging
 ### comparison group pairing 1: trans people in treated states vs. cis queer people in treated states
@@ -92,6 +99,40 @@ df_queer <- map(panels, ~merger(hps_queer,
 df_trans <- map(panels, ~merger(hps_trans,
                                 panel = .x,
                                 keep_types = c("treated", "notyettreated")))
+
+
+# doing a little cleaning/recoding
+df_queer <- map(df_queer, ~drop_na(.x,
+                                   anxious, worry, interest, down) |> 
+                  mutate(phq4 = anxious + worry + interest + down - 4, #HPS codes these from 1-4; we need them added as though they are 0-3
+                         group = case_when(trans_gnc == 1 ~ treatment_period,
+                                           trans_gnc == 0 ~ 0), #`did` package convention: comparison group's group is 0
+                         coldeg = case_match(educ, 
+                                             c(1:4) ~ 0,
+                                             c(5:7) ~ 1,
+                                             .default = NA_integer_),
+                         nhw = case_match(as.numeric(race_rc),
+                                          1 ~ 1,
+                                          c(2:4) ~ 0,
+                                          .default = NA_integer_),
+                         age = year(startdate) - birth_year))
+
+#using the same process on the trans datasets:
+df_trans <- map(df_trans, ~drop_na(.x,
+                                   anxious, worry, interest, down) |> 
+                  mutate(phq4 = anxious + worry + interest + down - 4,
+                         group = case_when(state_type == "treated" ~ treatment_period,
+                                           state_type == "notyettreated" ~ 0),
+                         coldeg = case_match(educ, 
+                                             c(1:4) ~ 0,
+                                             c(5:7) ~ 1,
+                                             .default = NA_integer_),
+                         nhw = case_match(as.numeric(race_rc),
+                                          1 ~ 1,
+                                          c(2:4) ~ 0,
+                                          .default = NA_integer_),
+                         age = year(startdate) - birth_year))
+
 
 ## saving data
 save(df_queer, df_trans,
